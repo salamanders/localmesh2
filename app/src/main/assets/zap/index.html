@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link href="data:image/png;base64,iVBORw0KGgo=" rel="icon">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Connected Spark Animation</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000000;
+        }
+
+        /* The main container for the animation */
+        .animation-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Canvas for drawing the zaps, positioned behind the spark */
+        #zapCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* The central spark element is now a container for glyphs */
+        .spark {
+            width: 80vmin; /* 80% of the smaller screen dimension */
+            height: 80vmin; /* 80% of the smaller screen dimension */
+            position: relative;
+            z-index: 2;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            /* Animation for hue */
+            animation: hue_shift 15s infinite ease-in-out;
+        }
+
+        /* Each individual spark character */
+        .spark-glyph {
+            position: absolute;
+            font-size: 100vmin; /* Extends to the maximum of width or height */
+            line-height: 1;
+            font-weight: 100; /* Makes the glyph thinner */
+            color: var(--spark-color);
+            opacity: 0.7;
+            mix-blend-mode: screen; /* Creates a brighter color where glyphs overlap */
+            animation: rotate 10s infinite linear;
+        }
+
+        /* Stagger the animations for a more chaotic, organic look */
+        .spark-glyph:nth-child(1) { animation-delay: -1s; animation-duration: 5s; }
+        .spark-glyph:nth-child(2) { animation-delay: -2s; animation-duration: 6s; }
+        .spark-glyph:nth-child(3) { animation-delay: -3s; animation-duration: 7s; }
+        .spark-glyph:nth-child(4) { animation-delay: -4s; animation-duration: 8s; }
+        .spark-glyph:nth-child(5) { animation-delay: -5s; animation-duration: 9s; }
+
+
+        /* Keyframe Animations */
+
+        /* Main rotation for each spark glyph */
+        @keyframes rotate {
+            0% { transform: rotate(0deg); opacity: 0.5; }
+            50% { transform: rotate(180deg); opacity: 1; }
+            100% { transform: rotate(360deg); opacity: 0.5; }
+        }
+
+        /* Combined animation for color shifting and RGB split glitches using text-shadow */
+        /* text-shadow: 0 0 30px var(--glow-color); text-shadow: 20px 0 #ff00de, -20px 0 #00f6ff;  */
+        @keyframes hue_shift {
+            0%, 100% { filter: hue-rotate(0deg); }
+            20% { filter: hue-rotate(72deg);  }
+            40% { filter: hue-rotate(144deg); }
+            60% { filter: hue-rotate(216deg); }
+            80% { filter: hue-rotate(288deg); }
+        }
+
+        :root {
+            /* We'll use hue-rotate for color shifting, so the base color is less critical */
+            --spark-color: #00ffff;
+            --glow-color: #00ffff88;
+        }
+    </style>
+</head>
+<body>
+
+<div class="animation-container">
+    <!-- The canvas where zaps are drawn -->
+    <canvas id="zapCanvas"></canvas>
+
+    <!-- The CSS-animated central spark, using text glyphs for a better glitch effect -->
+    <div class="spark">
+        <span class="spark-glyph">✦</span>
+        <span class="spark-glyph">✦</span>
+        <span class="spark-glyph">✦</span>
+        <span class="spark-glyph">✦</span>
+        <span class="spark-glyph">✦</span>
+    </div>
+</div>
+
+<script type="text/javascript">
+    const canvas = document.getElementById('zapCanvas');
+    const ctx = canvas.getContext('2d');
+
+    let zaps = [];
+    // A vibrant color palette for the zaps
+    const COLORS = ['#00ffff', '#ff00ff', '#ffff00', '#00ff7f', '#ff69b4', '#ffa500'];
+
+    // Utility function to get a random number in a range
+    function random(min, max) {
+        return Math.random() * (max - min) + min;
+    }
+
+    // --- Zap Class Definition ---
+    class Zap {
+        constructor() {
+            this.direction = Math.random() > 0.5 ? 'in' : 'out';
+            this.center = { x: canvas.width / 2, y: canvas.height / 2 };
+            this.color = COLORS[Math.floor(Math.random() * COLORS.length)];
+
+            // Determine start and end points based on direction
+            const edgePoint = this.getRandomEdgePoint();
+            if (this.direction === 'out') {
+                this.start = this.center;
+                this.end = edgePoint;
+            } else {
+                this.start = edgePoint;
+                this.end = this.center;
+            }
+
+            this.life = 1; // Lifespan of the zap (0 to 1)
+            this.speed = random(0.005, 0.012); // Slower speed for longer persistence
+            this.segments = Math.floor(random(6, 12)); // Fewer segments for bolder jags
+            this.jaggedness = random(50, 70); // How far the line deviates
+            this.lineWidth = random(20, 40); // Thickness of the zap
+        }
+
+        // Get a random point on one of the four screen edges
+        getRandomEdgePoint() {
+            const edge = Math.floor(random(0, 4));
+            switch (edge) {
+                case 0: return { x: random(0, canvas.width), y: 0 }; // Top
+                case 1: return { x: canvas.width, y: random(0, canvas.height) }; // Right
+                case 2: return { x: random(0, canvas.width), y: canvas.height }; // Bottom
+                case 3: return { x: 0, y: random(0, canvas.height) }; // Left
+            }
+        }
+
+        // Update the lifespan of the zap
+        update() {
+            this.life -= this.speed;
+        }
+
+        // Draw the zap onto the canvas
+        draw() {
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, this.life * 2.5); // Fade out
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = this.lineWidth;
+            // ctx.shadowBlur = 100; // Large glow effect
+            ctx.shadowColor = this.color;
+
+            ctx.beginPath();
+
+            // For inbound zaps, the path shortens from the start. For outbound, it extends to the end.
+            // This makes them look like they are appearing/disappearing from/to the center.
+            const progress = 1 - this.life;
+            let from, to;
+            if (this.direction === 'out') {
+                from = this.start;
+                to = {
+                    x: this.start.x + (this.end.x - this.start.x) * progress,
+                    y: this.start.y + (this.end.y - this.start.y) * progress
+                };
+            } else { // 'in'
+                from = {
+                    x: this.end.x - (this.end.x - this.start.x) * progress,
+                    y: this.end.y - (this.end.y - this.start.y) * progress
+                };
+                to = this.end;
+            }
+
+            ctx.moveTo(from.x, from.y);
+
+            // Draw jagged segments between the 'from' and 'to' points
+            const segDx = (to.x - from.x) / this.segments;
+            const segDy = (to.y - from.y) / this.segments;
+
+            for (let i = 1; i < this.segments; i++) {
+                 ctx.lineTo(
+                    from.x + i * segDx + random(-this.jaggedness, this.jaggedness),
+                    from.y + i * segDy + random(-this.jaggedness, this.jaggedness)
+                );
+            }
+
+            ctx.lineTo(to.x, to.y);
+            ctx.stroke();
+            ctx.restore();
+        }
+    }
+
+    // --- Main Animation Loop ---
+    function animate() {
+        // console.log("Animating... Zaps count: " + zaps.length);
+        // Clear canvas for next frame
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Update and draw each active zap, removing any that have faded
+        for (let i = zaps.length - 1; i >= 0; i--) {
+            const zap = zaps[i];
+            zap.update();
+            zap.draw();
+            if (zap.life <= 0) {
+                zaps.splice(i, 1);
+            }
+        }
+
+        // Request the next frame
+        requestAnimationFrame(animate);
+    }
+
+    // --- Zap Creation Logic ---
+    function createZaps() {
+        const burstChance = Math.random();
+        const zapCount = burstChance > 0.9 ? 3 : 1; // 10% chance of a burst of 3 zaps
+
+        if (zaps.length < 15) { // Limit total concurrent zaps for performance
+            for (let i=0; i < zapCount; i++) {
+                zaps.push(new Zap());
+            }
+        }
+        // Set a timeout to call this function again after a random interval
+        setTimeout(createZaps, random(200, 1000));
+    }
+
+    // --- Initialization ---
+    function init() {
+        const container = document.querySelector('.animation-container');
+
+        // Set initial canvas size and add listener for window resize
+        function resizeCanvas() {
+            // Use the container's dimensions for a more robust sizing
+            canvas.width = container.offsetWidth;
+            canvas.height = container.offsetHeight;
+        }
+
+        // Use ResizeObserver for more reliable resize detection
+        const resizeObserver = new ResizeObserver(resizeCanvas);
+        resizeObserver.observe(container);
+
+        resizeCanvas(); // Initial size set
+
+        // Kick off the animation loops
+        animate();
+        createZaps();
+        console.log('LOCALMESH_SCRIPT_SUCCESS:zap');
+    }
+
+    // Defer initialization until the DOM is fully loaded
+    window.addEventListener('DOMContentLoaded', init);
+</script>
+
+</body>
+</html>
+

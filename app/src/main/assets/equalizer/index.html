@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link href="data:image/png;base64,iVBORw0KGgo=" rel="icon">
+    <meta content="width=device-width, initial-scale=1.0, user-scalable=no" name="viewport">
+    <title>Graphic Equalizer</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
+        #message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-family: sans-serif;
+            font-size: 1.5em;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+<canvas id="equalizerCanvas"></canvas>
+<div id="message"></div>
+
+<script type="text/javascript">
+    const canvas = document.getElementById('equalizerCanvas');
+    const ctx = canvas.getContext('2d');
+    const message = document.getElementById('message');
+
+    let audioContext;
+    let analyser;
+    let source;
+    let dataArray;
+    let bufferLength;
+
+    let width, height;
+    let deviceId;
+
+    const NUM_DEVICES = 10; // Total number of phones in the mesh
+
+    function getDeviceId() {
+        let id = localStorage.getItem('deviceId');
+        if (!id) {
+            id = Math.floor(Math.random() * NUM_DEVICES);
+            localStorage.setItem('deviceId', id);
+        }
+        return parseInt(id, 10);
+    }
+
+    async function setupAudio() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            source = audioContext.createMediaStreamSource(stream);
+            source.connect(analyser);
+
+            analyser.fftSize = 256;
+            bufferLength = analyser.frequencyBinCount;
+            dataArray = new Uint8Array(bufferLength);
+
+            message.style.display = 'none';
+            setup();
+            animate();
+            console.log('LOCALMESH_SCRIPT_SUCCESS:equalizer');
+        } catch (err) {
+            console.error('Error accessing microphone:', err);
+            message.textContent = 'Could not access microphone. Please allow permission.';
+        }
+    }
+
+    function setup() {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+        deviceId = getDeviceId();
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+
+        analyser.getByteFrequencyData(dataArray);
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+        ctx.fillRect(0, 0, width, height);
+
+        const freqRangePerDevice = Math.floor(bufferLength / NUM_DEVICES);
+        const startFreq = deviceId * freqRangePerDevice;
+        const endFreq = startFreq + freqRangePerDevice;
+
+        const barWidth = width / freqRangePerDevice;
+        let x = 0;
+
+        for (let i = startFreq; i < endFreq; i++) {
+            const barHeight = dataArray[i] * (height / 255);
+            const hue = (i / bufferLength) * 360;
+
+            ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+            ctx.fillRect(x, height - barHeight, barWidth, barHeight);
+
+            x += barWidth;
+        }
+    }
+
+    // Initial setup, and now start audio automatically.
+    setup();
+    function autoStartInWebView() {
+        if (!audioContext) {
+            setupAudio();
+        }
+    }
+
+</script>
+</body>
+</html>

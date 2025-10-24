@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link href="data:image/png;base64,iVBORw0KGgo=" rel="icon">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Glowing Snakes Animation</title>
+    <style>
+        /* Basic styles to ensure the canvas fills the screen */
+        html, body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+<!-- The canvas is where all the animation will be drawn -->
+<canvas id="snakesCanvas"></canvas>
+
+<script type="text/javascript">
+    const canvas = document.getElementById('snakesCanvas');
+    const ctx = canvas.getContext('2d');
+
+    let width, height;
+    let snakes = [];
+    const NUM_SNAKES = 40; // Reduced for smoother performance
+    let worldBounds; // The boundaries of the larger, off-screen area
+
+    /**
+     * Utility function to get a random number in a range.
+     * @param {number} min - The minimum value.
+     * @param {number} max - The maximum value.
+     * @returns {number} A random number between min and max.
+     */
+    function random(min, max) {
+        return Math.random() * (max - min) + min;
+    }
+
+    // --- Snake Class Definition ---
+    // This class defines the behavior and appearance of a single snake.
+    class Snake {
+        constructor() {
+            // The `reset` method is called to initialize the snake's properties
+            // and place it in the world for the first time.
+            this.reset();
+        }
+
+        /**
+         * Resets the snake to a new random state and position. This is used for
+         * initial spawning and for respawning when a snake goes off-screen.
+         */
+        reset() {
+            // --- Appearance & Behavior Properties ---
+            this.length = Math.floor(random(70, 200)); // Number of segments
+            this.radius = random(4, 12);             // Base size, used for line thickness
+            this.speed = random(1, 6);            // How fast it moves
+            this.turnRate = random(0.05, 0.20);       // How sharply it can turn
+            this.hue = random(0, 360);                // Base color of the snake
+
+            // --- Movement Properties ---
+            this.segments = []; // An array to hold the {x, y} coordinates of each body segment
+
+            // --- Spawning Logic ---
+            // The goal is to spawn the snake on the edge of the large "world" area
+            // and have it point towards the visible screen area.
+
+            const side = Math.floor(random(0, 4));
+            const centerOfScreen = { x: width / 2, y: height / 2 };
+            let startX, startY;
+
+            // Pick a random edge of the world to spawn on
+            switch (side) {
+                case 0: // Top edge
+                    startX = random(worldBounds.minX, worldBounds.maxX);
+                    startY = worldBounds.minY;
+                    break;
+                case 1: // Right edge
+                    startX = worldBounds.maxX;
+                    startY = random(worldBounds.minY, worldBounds.maxY);
+                    break;
+                case 2: // Bottom edge
+                    startX = random(worldBounds.minX, worldBounds.maxX);
+                    startY = worldBounds.maxY;
+                    break;
+                case 3: // Left edge
+                    startX = worldBounds.minX;
+                    startY = random(worldBounds.minY, worldBounds.maxY);
+                    break;
+            }
+
+            // Calculate the initial angle to point towards the center of the visible screen,
+            // adding some randomness so they don't all converge on the exact same point.
+            this.angle = Math.atan2(centerOfScreen.y - startY, centerOfScreen.x - startX) + random(-Math.PI / 4, Math.PI / 4);
+
+            // Populate the initial segments at the starting position to form the snake's body.
+            for (let i = 0; i < this.length; i++) {
+                this.segments.push({ x: startX, y: startY });
+            }
+        }
+
+        /**
+         * Updates the snake's position for each frame of the animation.
+         */
+        update() {
+            // Adjust the angle by a small random amount to create a slithering motion.
+            this.angle += (Math.random() - 0.5) * this.turnRate;
+
+            // Calculate the new head position based on the current angle and speed.
+            const head = { ...this.segments[0] }; // Create a copy of the current head
+            head.x += Math.cos(this.angle) * this.speed;
+            head.y += Math.sin(this.angle) * this.speed;
+
+            // Add the new head to the beginning of the segments array.
+            this.segments.unshift(head);
+
+            // Remove the last segment to make the snake move.
+            if (this.segments.length > this.length) {
+                this.segments.pop();
+            }
+
+            // Check if the snake's head has gone outside the world boundaries.
+            // If it has, call `reset()` to make it disappear and respawn elsewhere.
+            if (head.x < worldBounds.minX || head.x > worldBounds.maxX ||
+                head.y < worldBounds.minY || head.y > worldBounds.maxY) {
+                this.reset();
+            }
+        }
+
+        /**
+         * Draws the snake onto the canvas using a more performant method.
+         */
+        draw() {
+            if (this.segments.length < 2) {
+                return; // Can't draw a line with fewer than 2 points
+            }
+
+            // Set the glow effect for the entire snake path
+            ctx.shadowColor = `hsl(${this.hue}, 100%, 50%)`;
+            ctx.shadowBlur = 20;
+
+            // A single path is much more performant than thousands of individual circles.
+            // We create a continuous line through all the segments.
+            ctx.beginPath();
+            ctx.moveTo(this.segments[0].x, this.segments[0].y);
+            for (let i = 1; i < this.segments.length; i++) {
+                ctx.lineTo(this.segments[i].x, this.segments[i].y);
+            }
+
+            // Style the line to look like a snake.
+            // The trail effect from the main animation loop creates the "fading tail".
+            ctx.strokeStyle = `hsla(${this.hue}, 100%, 60%, 0.8)`;
+            ctx.lineWidth = this.radius * 2.0; // Use radius to set thickness
+            ctx.lineCap = 'round';    // For smooth ends
+            ctx.lineJoin = 'round';   // For smooth turns
+
+            // Draw the complete snake path with the glow effect.
+            ctx.stroke();
+        }
+    }
+
+    // --- Main Animation Loop ---
+    function animate() {
+        // Reset shadow properties before drawing the trail effect.
+        ctx.shadowBlur = 0;
+
+        // Draw a semi-transparent black rectangle over the canvas each frame.
+        // This creates the fading tail effect for the snakes.
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+        ctx.fillRect(0, 0, width, height);
+
+        // Update and draw each snake.
+        snakes.forEach(snake => {
+            snake.update();
+            snake.draw();
+        });
+
+        // Request the next animation frame to create a smooth loop.
+        requestAnimationFrame(animate);
+    }
+
+    // --- Initialization and Resize Handler ---
+    function setup() {
+        // Set canvas dimensions to fill the window.
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+
+        // Define the off-screen world boundaries.
+        // We make the world twice the width and height of the screen,
+        // resulting in an area 4 times larger. The visible canvas is centered within this world.
+        const worldWidth = width * 2;
+        const worldHeight = height * 2;
+        worldBounds = {
+            minX: (width - worldWidth) / 2,
+            maxX: (width + worldWidth) / 2,
+            minY: (height - worldHeight) / 2,
+            maxY: (height + worldHeight) / 2
+        };
+
+        // If this is the first time running, create the snakes.
+        if (snakes.length === 0) {
+            for (let i = 0; i < NUM_SNAKES; i++) {
+                snakes.push(new Snake());
+            }
+        } else {
+            // If the window is resized, just reset the existing snakes to fit the new boundaries.
+            snakes.forEach(s => s.reset());
+        }
+    }
+
+    // --- Start the Animation ---
+    window.addEventListener('resize', setup); // Recalculate everything on window resize
+    setup();    // Initial setup
+    animate();  // Start the animation loop
+    console.log('LOCALMESH_SCRIPT_SUCCESS:snakes');
+</script>
+</body>
+</html>

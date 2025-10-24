@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1.0, user-scalable=no" name="viewport">
+    <title>Motion Color</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100%;
+            width: 100%;
+            background-color: #000;
+        }
+    </style>
+</head>
+<body>
+<script type="text/javascript">
+    const body = document.body;
+    const magnitudeHistory = [];
+    const windowSize = 150;
+    let minRecentMagnitude = 9.0;
+    let maxRecentMagnitude = 15.0;
+
+    function handleMotionEvent(event) {
+        if (!event.accelerationIncludingGravity) {
+            return;
+        }
+        const { x, y, z } = event.accelerationIncludingGravity;
+        const hue = (Math.atan2(z, x) * (180 / Math.PI) + 360) % 360;
+        const magnitude = Math.sqrt(x * x + y * y + z * z);
+        magnitudeHistory.push(magnitude);
+        if (magnitudeHistory.length > windowSize) {
+            magnitudeHistory.shift();
+        }
+        if (magnitudeHistory.length > 1) {
+            minRecentMagnitude = Math.min(...magnitudeHistory);
+            maxRecentMagnitude = Math.max(...magnitudeHistory);
+        }
+        const range = maxRecentMagnitude - minRecentMagnitude;
+        let lightness = 0;
+        if (range > 1) {
+            lightness = Math.max(0, Math.min(1, (magnitude - minRecentMagnitude) / range));
+        } else if (magnitude >= maxRecentMagnitude) {
+            lightness = 1;
+        }
+        body.style.backgroundColor = `hsl(${hue}, 100%, ${lightness * 100}%)`;
+    }
+
+    function autoStartInWebView() {
+        if (typeof DeviceMotionEvent.requestPermission === 'function') {
+            DeviceMotionEvent.requestPermission()
+                .then(permissionState => {
+                    if (permissionState === 'granted') {
+                        window.addEventListener('devicemotion', handleMotionEvent);
+                        console.log('LOCALMESH_SCRIPT_SUCCESS:motion');
+                    }
+                })
+                .catch(console.error);
+        } else {
+            // Android and other browsers
+            window.addEventListener('devicemotion', handleMotionEvent);
+            console.log('LOCALMESH_SCRIPT_SUCCESS:motion');
+        }
+    }
+</script>
+</body>
+</html>
