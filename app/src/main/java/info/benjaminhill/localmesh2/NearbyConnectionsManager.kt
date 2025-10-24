@@ -16,9 +16,10 @@ import com.google.android.gms.nearby.connection.Strategy
 class NearbyConnectionsManager(
     context: Context,
 ) {
-    val serviceId = "info.benjaminhill.localmesh2"
-    val connectionsClient: ConnectionsClient = Nearby.getConnectionsClient(context)
-    val localName = CachedPrefs.getId(context)
+    private val serviceId = "info.benjaminhill.localmesh2"
+    private val connectionsClient: ConnectionsClient = Nearby.getConnectionsClient(context)
+    private val localName = CachedPrefs.getId(context)
+    private val connectedEndpoints = mutableSetOf<String>()
 
     fun startAdvertising() {
         // Strategy.P2P_CLUSTER is used as it supports M-to-N connections,
@@ -56,6 +57,16 @@ class NearbyConnectionsManager(
                 TAG,
                 "EndpointDiscoveryCallback onEndpointFound $endpointId: $discoveredEndpointInfo"
             )
+            if (connectedEndpoints.size < 2 && endpointId < localName) {
+                Log.i(TAG, "Requesting connection to $endpointId")
+                connectionsClient.requestConnection(localName, endpointId, connectionLifecycleCallback)
+                    .addOnSuccessListener {
+                        Log.i(TAG, "Successfully requested connection to $endpointId")
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e(TAG, "Failed to request connection to $endpointId", e)
+                    }
+            }
         }
 
         override fun onEndpointLost(endpointId: String) {
@@ -73,6 +84,13 @@ class NearbyConnectionsManager(
                     TAG,
                     "ConnectionLifecycleCallback onConnectionInitiated $endpointId: $connectionInfo"
                 )
+                if (connectedEndpoints.size < 2) {
+                    Log.i(TAG, "Accepting connection from $endpointId")
+                    connectionsClient.acceptConnection(endpointId, null)
+                } else {
+                    Log.i(TAG, "Rejecting connection from $endpointId, already have ${connectedEndpoints.size} connections")
+                    connectionsClient.rejectConnection(endpointId)
+                }
             }
 
             override fun onConnectionResult(
@@ -82,10 +100,17 @@ class NearbyConnectionsManager(
                     TAG,
                     "ConnectionLifecycleCallback onConnectionResult $endpointId: $resolution"
                 )
+                if (resolution.status.isSuccess) {
+                    Log.i(TAG, "Successfully connected to $endpointId")
+                    connectedEndpoints.add(endpointId)
+                } else {
+                    Log.e(TAG, "Failed to connect to $endpointId: ${resolution.status}")
+                }
             }
 
             override fun onDisconnected(endpointId: String) {
                 Log.i(TAG, "ConnectionLifecycleCallback onDisconnected $endpointId")
+                connectedEndpoints.remove(endpointId)
             }
 
         }
