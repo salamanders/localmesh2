@@ -13,6 +13,8 @@ including the device ID, P2P status, and the number of peers. It also lists avai
 
 The application is written in Kotlin and uses Gradle for building and Jetpack Compose for the UI.
 
+The progress of the project is maintained in [JOURNAL.md].  All major changes must be logged in the journal.  
+
 ---
 
 ## 2. System Architecture
@@ -33,21 +35,6 @@ The system is composed of these main components:
       and the Kotlin backend.
 * **Peers:** Other Android devices on the same local network running the LocalMesh2 app.
 
-### FUTURE: Potential Architectural Improvements
-
-The original `localmesh` project used a more complex architecture that could be beneficial to adopt
-in the future.
-
-* **FUTURE: `BridgeService`:** A foreground `Service` that orchestrates all the components. This
-  would keep the mesh network alive even when the app is not in the foreground.
-* **FUTURE: `LocalHttpServer`:** A Ktor-based HTTP server that serves the web UI and provides a full
-  API for the frontend. This is a more powerful and flexible alternative to the current JavaScript
-  bridge.
-* **FUTURE: `FileReassemblyManager`:** A manager class to handle incoming file chunks, reassemble
-  them, and save them to disk, enabling file sharing.
-* **FUTURE: `ServiceHardener`:** A watchdog service that monitors the health of the application and
-  can restart it if it becomes unresponsive.
-
 ---
 
 ## 3. Communication Protocol
@@ -55,38 +42,6 @@ in the future.
 The project uses a gossip protocol to broadcast `NetworkMessage` objects to all connected peers. The
 `NearbyConnectionsManager` implements a "Check, Process, Forward" mechanism to ensure messages reach
 every node exactly once while preventing infinite loops.
-
-### FUTURE: Enhancing the Gossip Protocol
-
-The current `NetworkMessage` is effective for simple, text-based data. A future goal is to evolve
-this into a truly "Unified" protocol, as seen in the original `localmesh` project, by enhancing the
-`NetworkMessage` data class to handle multiple, strongly-typed data payloads.
-
-**Core Concept:** A unified protocol would treat **all** data—commands, API calls, and file data
-alike—as different types within the same standard `NetworkMessage` wrapper.
-
-**Example of an Enhanced `NetworkMessage`:**
-
-```kotlin
-@Serializable
-data class NetworkMessage(
-    val messageId: String = UUID.randomUUID().toString(),
-    val hopCount: Int = 0,
-
-    // FUTURE: Explicit type for API calls
-    val httpRequest: HttpRequestWrapper? = null,
-
-    // FUTURE: Explicit type for file transfers
-    val fileChunk: FileChunk? = null,
-
-    // Current implementation for simple messages
-    val messageContent: String? = null
-)
-```
-
-This would allow the "Check, Process, Forward" logic to seamlessly handle different kinds of data,
-making it possible to add features like file sharing and a mesh-wide API without ambiguity. The
-receiver would simply check which field is not null to know how to process the payload.
 
 ---
 
@@ -132,8 +87,11 @@ mandatory for all tasks.
 * **Features:** Large features must be planned in a `{FEATURE_NAME}.md` file. The file should
   include goals, design, and a checklist of changes. A feature is not complete until the code is
   compiled, lint-checked, and auto-formatted.
+    * For a large feature or refactor, run a "clean compile" **before** changing code. This helps
+      isolate any issues.
 * **Bugs:** All bugs must be documented in `BUGS.md`. Each bug should have a "Severity", "State" (
-  open, closed, wont_fix), "Description", "Location in Code", and "Attempts".
+  open, closed, wont_fix), "Description", "Location in Code", and "Attempts".  "Attempts" details
+  what was tried to fix the issue, and should include the outcome regardless of success.
 
 ---
 
@@ -162,12 +120,14 @@ mandatory for all tasks.
 5. **Document Reverts:** If you revert a change, document it in a markdown file so the mistake is
    not repeated.
 6. **Leave Logs:** Bias towards leaving new logging statements in the code.
-7. **Utilize the User:** For large, repetitive tasks (e.g., 10+ search-and-replace), ask the user to
-   perform them.
+7. **Utilize the User:** For large, repetitive tasks (e.g., 5+ search-and-replace), ask the user to
+   perform them using the IDE.
 
 ---
 
 ## 7. Technical Sticking Points
+
+These are critial for Jules or gemini-cli to function.
 
 * **GUESSING WITHOUT EVIDENCE:** Do not guess. Take small, evidence-backed steps.
 * **KOTLINX.SERIALIZATION BINARY FORMATS:** `kotlinx.serialization.json.Json` is a `StringFormat`,
@@ -176,23 +136,9 @@ mandatory for all tasks.
   required.
 * **Logcat Filtering:** `logcat` output is too large to read without filters. Start with tight
   filters and relax them as needed.
-* **Process IDs:** The process ID changes on every run. Filter logs accordingly.
-* **Skipping Large Files:** Always skip reading the content of minified JavaScript libraries like
-  `three.min.js` or `Tween.min.js`.
-
----
-
-## 8. FUTURE: API Reference
-
-If a Ktor-based `LocalHttpServer` is implemented, the following API endpoints from the original
-project could be a good starting point:
-
-* `GET /list?type=folders`: Lists the available content folders.
-* `GET /status`: Retrieves the current service status, device ID, and peer list.
-* `POST /chat`: Sends a chat message to all peers.
-* `GET /display`: Triggers the `WebAppActivity` on remote peers.
-* `POST /send-file`: Initiates a file transfer.
-* `GET /{path...}`: Serves static files.
+* **Process IDs:** The process ID changes on every run. Filter logs accordingly.  If a logcat is ever empty, back up and reconfirm the process id, which device it is running on, and re-install as necessary.
+* **Skipping Large Files:** Always skip reading the content of JavaScript libraries like
+  `three.min.js` or `Tween.min.js`, they will overwhelm the context.
 
 ---
 
@@ -200,6 +146,8 @@ project could be a good starting point:
 
 The original project had a robust method for end-to-end testing using `adb` and `curl`. This is a
 good model to follow.
+
+IMPORTANT: The agent often has issues getting logcat.  Every time, the agent should get the most recent 5 lines from the logcat directly (filtered to the app) to prove it works and to prove it isn't empty.  Then the agent should dump the logcat to a local temp file at `./temp/logcat_{device id}.txt`.  This file will always be too big to read, but the agent can then repeatedly grep the file looking for evidence.  Always grep with a limit from the bottom-up, e.g. `grep "pattern" filename | tail -n 50` to avoid overwhelming the context.
 
 ### Test Workflow
 

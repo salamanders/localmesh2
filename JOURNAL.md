@@ -152,3 +152,117 @@ if it implements a similar feature:
 * **Testing Topology Logic:** The `NEW_DEVELOPER_TESTING_GUIDE.md` highlighted that automated
   testing of complex, emergent network behavior can be flaky. Manual testing on real devices remains
   the most reliable way to verify topology optimization logic.
+
+
+# Refactor: Separate Topology Optimizer from Connection Management
+
+## Goals
+
+- To refactor `NearbyConnectionsManager` by separating the low-level connection management from the
+  high-level topology optimization logic.
+- To improve code clarity, flexibility, and testability.
+- To follow the "Composition over Inheritance" design principle.
+
+## Design
+
+We will split the existing `NearbyConnectionsManager` into two distinct classes:
+
+1. **`NearbyConnectionsManager` (Refactored):**
+  - This class will be responsible *only* for the direct interactions with the
+    `com.google.android.gms.nearby.connection` API.
+  - It will manage the connection lifecycle, advertising, discovery, and payload transfers.
+  - It will hold a reference to a `TopologyOptimizer` and will consult it when making decisions.
+  - It will not contain any logic specific to the "snake" topology (e.g., reshuffling, connection
+    count rules).
+
+2. **`TopologyOptimizer` (New Class):**
+  - This class will contain all the high-level logic for maintaining the desired mesh topology.
+  - It will be responsible for the "reshuffling" logic.
+  - It will provide decision-making methods like
+    `shouldConnectTo(endpointId, theirConnectionCount)` and `selectEndpointToDisconnect()`.
+  - **Crucially, this class will have no `import` statements
+    from `com.google.android.gms.nearby.connection`.** It will work with pure data types (Strings,
+    Ints, Maps).
+
+## List of Changes
+
+- [x] Create the new file `app/src/main/java/info/benjaminhill/localmesh2/TopologyOptimizer.kt`.
+- [x] Define the `TopologyOptimizer` class structure with placeholder methods.
+- [x] Move the reshuffling logic (`startReshuffling`, `reshuffleJob`) from
+  `NearbyConnectionsManager` to `TopologyOptimizer`.
+- [x] Move the topology-related decision logic from `endpointDiscoveryCallback` in
+  `NearbyConnectionsManager` into `TopologyOptimizer`.
+- [x] Move the topology-related decision logic from `onDisconnected` in `NearbyConnectionsManager`
+  into `TopologyOptimizer`.
+- [x] In `NearbyConnectionsManager`, create an instance of `TopologyOptimizer`.
+- [x] Update `NearbyConnectionsManager` to call the new methods on `TopologyOptimizer` to make
+  decisions.
+- [x] Remove all `com.google.android.gms.nearby.connection` imports and dependencies from
+  `TopologyOptimizer`.
+- [x] Verify the refactoring by building the project.
+- [ ] Delete `REFACTOR_TOPOLOGY_OPTIMIZER.md`.
+
+
+
+### FUTURE: Enhancing the Gossip Protocol
+
+The current `NetworkMessage` is effective for simple, text-based data. A future goal is to evolve
+this into a truly "Unified" protocol, as seen in the original `localmesh` project, by enhancing the
+`NetworkMessage` data class to handle multiple, strongly-typed data payloads.
+
+**Core Concept:** A unified protocol would treat **all** data—commands, API calls, and file data
+alike—as different types within the same standard `NetworkMessage` wrapper.
+
+**Example of an Enhanced `NetworkMessage`:**
+
+```kotlin
+@Serializable
+data class NetworkMessage(
+    val messageId: String = UUID.randomUUID().toString(),
+    val hopCount: Int = 0,
+
+    // FUTURE: Explicit type for API calls
+    val httpRequest: HttpRequestWrapper? = null,
+
+    // FUTURE: Explicit type for file transfers
+    val fileChunk: FileChunk? = null,
+
+    // Current implementation for simple messages
+    val messageContent: String? = null
+)
+```
+
+This would allow the "Check, Process, Forward" logic to seamlessly handle different kinds of data,
+making it possible to add features like file sharing and a mesh-wide API without ambiguity. The
+receiver would simply check which field is not null to know how to process the payload.
+
+
+
+### FUTURE: Potential Architectural Improvements
+
+The original `localmesh` project used a more complex architecture that could be beneficial to adopt
+in the future.
+
+* **FUTURE: `BridgeService`:** A foreground `Service` that orchestrates all the components. This
+  would keep the mesh network alive even when the app is not in the foreground.
+* **FUTURE: `LocalHttpServer`:** A Ktor-based HTTP server that serves the web UI and provides a full
+  API for the frontend. This is a more powerful and flexible alternative to the current JavaScript
+  bridge.
+* **FUTURE: `FileReassemblyManager`:** A manager class to handle incoming file chunks, reassemble
+  them, and save them to disk, enabling file sharing.
+* **FUTURE: `ServiceHardener`:** A watchdog service that monitors the health of the application and
+  can restart it if it becomes unresponsive.
+
+
+
+## 8. FUTURE: API Reference
+
+If a Ktor-based `LocalHttpServer` is implemented, the following API endpoints from the original
+project could be a good starting point:
+
+* `GET /list?type=folders`: Lists the available content folders.
+* `GET /status`: Retrieves the current service status, device ID, and peer list.
+* `POST /chat`: Sends a chat message to all peers.
+* `GET /display`: Triggers the `WebAppActivity` on remote peers.
+* `POST /send-file`: Initiates a file transfer.
+* `GET /{path...}`: Serves static files.
