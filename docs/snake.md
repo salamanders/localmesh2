@@ -1,87 +1,83 @@
-# Snake Topology P2P Mesh Plan
+# Self-Healing, Randomized Mesh Topology Plan
 
-This document outlines the plan to create a fully connected P2P mesh from devices that only support
-two connections each, forming a "snake" or ring topology.
+This document outlines the plan to create a fully connected and resilient P2P mesh from devices that support a flexible number of connections (2-4), designed for a dynamic and unstable environment.
 
 ## 1. Introduction
 
-The goal is to create a peer-to-peer network where each device (node) connects to a maximum of two
-other devices. This will form a linear chain of devices, and when the ends of the chain connect, it
-forms a ring. This topology is efficient for data propagation in a specific order and can be used
-for various applications, such as distributed data processing, content sharing, and collaborative
-applications.
+The primary goal is to create a peer-to-peer network that is robust against frequent node failures and can quickly heal itself to prevent network partitioning (islands). This topology is optimized for broadcasting small messages to all nodes in the network.
 
-## 2. Connection Management
+## 2. Core Concepts
 
-The core of the snake topology is careful management of connections. The
-`NearbyConnectionsManager.kt` will be modified to handle the following logic.
+The "Self-Healing, Randomized Mesh" is built on the following principles:
 
-### 2.1. State Management
+- **Redundancy:** Each node will aim to maintain a flexible number of connections (2-4) to ensure multiple paths for data propagation.
+- **Randomization:** To avoid suboptimal network topologies, nodes will periodically and randomly drop a connection to a well-connected peer and seek a new, less-connected peer.
+- **Dynamic Adaptation:** The network will constantly adapt to nodes joining and leaving, with a focus on quick recovery from failures.
+- **Decentralization:** There is no central coordinator; all nodes operate independently.
 
-Each device needs to maintain its state, which includes:
+## 3. Connection Management
 
-- A list of currently connected endpoints (max 2).
-- A set of discovered endpoints.
+The `NearbyConnectionsManager.kt` will be modified to handle the following logic.
+
+### 3.1. State Management
+
+Each device will maintain its state, which includes:
+
+- A list of currently connected endpoints.
+- A set of discovered endpoints, along with their advertised metadata (e.g., number of active peers).
 - A set of endpoints with pending connection requests.
 
-### 2.2. Discovery
+### 3.2. Advertising and Discovery
 
 - Devices will continuously advertise their presence using `startAdvertising()`.
+- The advertising payload will be enhanced to include the node's current number of active connections. This can be done by modifying the `localName` or using a custom field if the API allows.
 - Devices will continuously discover other devices using `startDiscovery()`.
 
-### 2.3. Connection Initiation
+### 3.3. Connection Initiation
 
-- In the `onEndpointFound` callback, a device will check if it has less than two connections.
-- If it has less than two connections, it will attempt to connect to the discovered endpoint.
-- To avoid two devices trying to connect to each other at the same time, we can introduce a simple
-  rule: the device with the lexicographically smaller endpoint ID initiates the connection.
+- In the `onEndpointFound` callback, a device will check if it has less than 4 connections.
+- If it has less than 4 connections, it will prioritize connecting to newly discovered endpoints that have fewer than 2 connections. This helps new nodes join the network quickly.
+- If all discovered nodes have 2 or more connections, the device will connect to a random endpoint that has less than 4 connections.
 
-### 2.4. Connection Acceptance/Rejection
+### 3.4. Connection Acceptance/Rejection
 
-- In the `onConnectionInitiated` callback, a device will check if it has less than two connections.
-- If it has less than two connections, it will accept the incoming connection.
-- If it already has two connections, it will reject the incoming connection.
+- In the `onConnectionInitiated` callback, a device will check if it has less than 4 connections.
+- If it has less than 4 connections, it will accept the incoming connection.
+- If it already has 4 connections, it will reject the incoming connection.
 
-### 2.5. Handling Disconnections
+### 3.5. Handling Disconnections and Network Healing
 
-- In the `onDisconnected` callback, the device will remove the disconnected endpoint from its list
-  of connected endpoints.
-- After a disconnection, the device will have less than two connections, so it will be eligible to
-  connect to new devices discovered in `onEndpointFound`.
+- In the `onDisconnected` callback, the device will remove the disconnected endpoint from its list of connected endpoints.
+- After a disconnection, if a node has fewer than 2 connections, it should immediately and aggressively try to connect to any available node to prevent becoming an island.
 
-## 3. Data Propagation
+### 3.6. Proactive Re-shuffling
 
-- Data will be propagated along the snake. When a device receives a message, it will forward it to
-  its other connected peer.
-- To prevent infinite loops in the ring, each message should have a unique ID. A device will keep
-  track of the IDs of the messages it has already seen and will not forward a message it has already
-  processed.
+- To prevent the network from settling into a suboptimal, clustered topology, each node will periodically perform a "re-shuffle".
+- Every few minutes, a node will check its connected peers. If all of its peers have 3 or more connections, the node will randomly drop one of its connections.
+- This will free up a connection slot, and the node will then try to connect to a new node, prioritizing those with fewer connections. This helps to create a more uniform and well-connected graph.
 
-## 4. Implementation Details in `NearbyConnectionsManager.kt`
+## 4. Data Propagation
 
-### 4.1. Strategy
+- For broadcasting, a simple flooding algorithm will be used. When a node receives a message, it will forward it to all of its connected peers.
+- To prevent infinite loops and redundant transmissions, each message will have a unique ID. A node will keep track of the IDs of the messages it has already seen and will not forward a message it has already processed.
 
-While `Strategy.P2P_CLUSTER` can be used with manual connection management, `Strategy.P2P_STAR`
-might be a better fit. With `P2P_STAR`, one device acts as a hub. We can adapt this by having each
-device act as a hub for at most one other device. However, for a more decentralized approach, we
-will stick with `P2P_CLUSTER` and implement the connection management logic ourselves.
+## 5. Implementation Details in `NearbyConnectionsManager.kt`
 
-### 4.2. Code Modifications
+### 5.1. Strategy
+
+`Strategy.P2P_CLUSTER` is the correct choice as it supports M-to-N connections, which is ideal for a mesh network.
+
+### 5.2. Code Modifications
 
 - **`NearbyConnectionsManager.kt`:**
-    - Add a `private val connectedEndpoints = mutableSetOf<String>()` to track connected endpoints.
-    - In `onEndpointFound`, add the logic to initiate a connection if `connectedEndpoints.size < 2`.
-    - In `onConnectionInitiated`, add the logic to accept or reject the connection based on
-      `connectedEndpoints.size`.
-    - In `onConnectionResult`, if the connection is successful, add the endpoint to
-      `connectedEndpoints`.
-    - In `onDisconnected`, remove the endpoint from `connectedEndpoints`.
+    - Update `maxPeers` to be `private const val MAX_CONNECTIONS = 4` and `private const val MIN_CONNECTIONS = 2`.
+    - Modify the `startAdvertising` call to include the number of connected peers in the advertised name.
+    - In `onEndpointFound`, parse the number of peers from the discovered endpoint's name and implement the connection logic described in section 3.3.
+    - In `onConnectionInitiated`, implement the logic to accept or reject the connection based on the number of current connections.
+    - Implement the "re-shuffling" logic using a periodic timer.
 
-## 5. Future Improvements
+## 6. Future Improvements
 
-- **Network Healing:** If the snake breaks (a node in the middle disconnects), the two ends of the
-  break will have only one connection. They will then be able to discover and connect to each other,
-  healing the snake.
-- **Multiple Snakes:** The current plan assumes a single snake. If the network is partitioned,
-  multiple snakes could form. We could introduce a mechanism to merge snakes when they discover each
-  other.
+- **Signal Strength:** The Nearby Connections API provides some information about the signal strength of discovered endpoints. This could be used to prioritize connections to physically closer devices, which may be more stable.
+- **Congestion Control:** For higher-traffic scenarios, a more sophisticated data propagation strategy could be implemented to avoid network congestion.
+- **Dynamic `maxPeers`:** The maximum number of connections could be dynamically adjusted based on network conditions. For example, in a very stable network, nodes could reduce their number of connections to save battery.
