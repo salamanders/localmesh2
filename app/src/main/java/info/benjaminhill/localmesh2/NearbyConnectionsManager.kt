@@ -15,16 +15,38 @@ import com.google.android.gms.nearby.connection.Payload
 import com.google.android.gms.nearby.connection.PayloadCallback
 import com.google.android.gms.nearby.connection.PayloadTransferUpdate
 import com.google.android.gms.nearby.connection.Strategy
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.random.Random
+import kotlin.time.Duration.Companion.minutes
 
 class NearbyConnectionsManager(
     context: Context,
+    private val scope: CoroutineScope,
 ) {
+    private var reshuffleJob: Job? = null
+    private var messageCleanupJob: Job? = null
     private val serviceId = "info.benjaminhill.localmesh2"
     private val connectionsClient: ConnectionsClient = Nearby.getConnectionsClient(context)
     private val localName = CachedPrefs.getId(context)
     private val connectedEndpoints = mutableSetOf<String>()
 
-    private val maxPeers = 2
+    /**
+     * Discovered endpoints and their reported number of connections.
+     * endpointId -> connectionCount
+     */
+    private val discoveredEndpoints = ConcurrentHashMap<String, Int>()
+
+    /**
+     * A map of recently seen message UIDs to the timestamp of their arrival.
+     * Used to prevent message loops and to re-broadcast messages to new peers.
+     * uid -> timestamp
+     */
+    private val seenMessageIds = ConcurrentHashMap<String, Long>()
 
     fun startAdvertising() {
         // Strategy.P2P_CLUSTER is used as it supports M-to-N connections,
@@ -33,12 +55,16 @@ class NearbyConnectionsManager(
         val advertisingOptions =
             AdvertisingOptions.Builder().setStrategy(Strategy.P2P_CLUSTER).build()
 
+        // The local endpoint name is advertised with the number of connections it has.
+        // e.g. "MyDeviceName:2"
+        val advertisingName = "$localName:${connectedEndpoints.size}"
+
         connectionsClient.startAdvertising(
-            localName, serviceId, connectionLifecycleCallback, advertisingOptions
+            advertisingName, serviceId, connectionLifecycleCallback, advertisingOptions
         ).addOnSuccessListener {
-            Log.i(TAG, "$localName started Advertising.")
+            Log.i(TAG, "$advertisingName started Advertising.")
         }.addOnFailureListener { e ->
-            Log.e(TAG, "$localName failed to start advertising", e)
+            Log.e(TAG, "$advertisingName failed to start advertising", e)
         }
     }
 
@@ -52,27 +78,95 @@ class NearbyConnectionsManager(
         }.addOnFailureListener { e ->
             Log.e(TAG, "$localName failed to start discovery", e)
         }
+        startReshuffling()
+        startMessageCleanup()
+    }
+
+    fun stop() {
+        Log.i(TAG, "Stopping nearby connections.")
+        reshuffleJob?.cancel()
+        messageCleanupJob?.cancel()
+        connectionsClient.stopAllEndpoints()
+    }
+
+    fun broadcast(bytes: ByteArray) {
+        val uid = UUID.randomUUID().toString()
+        val payloadBytes = uid.toByteArray() + bytes
+        seenMessageIds[uid] = System.currentTimeMillis()
+        Log.i(TAG, "Broadcasting ${payloadBytes.size} bytes with uid $uid")
+        connectionsClient.sendPayload(
+            connectedEndpoints.toList(),
+            Payload.fromBytes(payloadBytes)
+        )
+    }
+
+    private fun startMessageCleanup() {
+        messageCleanupJob = scope.launch {
+            while (true) {
+                delay(1.minutes)
+                val now = System.currentTimeMillis()
+                val thirtyMinutesAgo = now - 30.minutes.inWholeMilliseconds
+                seenMessageIds.entries.removeAll { it.value < thirtyMinutesAgo }
+            }
+        }
+    }
+
+    private fun startReshuffling() {
+        reshuffleJob = scope.launch {
+            while (true) {
+                delay(1.minutes)
+                val myConnectionCount = connectedEndpoints.size
+                if (myConnectionCount < MIN_CONNECTIONS) {
+                    // Not enough connections to reshuffle.
+                    continue
+                }
+
+                // If all my peers are well-connected, drop one to find a new, less-connected peer.
+                val allPeersWellConnected = connectedEndpoints.all { endpointId ->
+                    (discoveredEndpoints[endpointId] ?: 0) >= 3
+                }
+
+                if (allPeersWellConnected) {
+                    val randomEndpoint = connectedEndpoints.randomOrNull()
+                    if (randomEndpoint != null) {
+                        Log.i(TAG, "Reshuffling: all peers are well-connected. Dropping $randomEndpoint.")
+                        connectionsClient.disconnectFromEndpoint(randomEndpoint)
+                    }
+                }
+            }
+        }
     }
 
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
-            Log.i(TAG, "onPayloadReceived: from $endpointId, type: ${payload.type}")
-            when (payload.type) {
-                Payload.Type.BYTES -> {
-                    val bytes = payload.asBytes()!!
-                    Log.i(
-                        TAG,
-                        "Emitting ${bytes.size} bytes from $endpointId to incomingPayloads flow."
+            if (payload.type == Payload.Type.BYTES) {
+                val bytes = payload.asBytes()!!
+                val uid = String(bytes.copyOfRange(0, 36))
+                val messageBytes = bytes.copyOfRange(36, bytes.size)
+
+                if (seenMessageIds.containsKey(uid)) {
+                    Log.i(TAG, "Ignoring duplicate message from $endpointId with uid $uid")
+                    return
+                }
+
+                seenMessageIds[uid] = System.currentTimeMillis()
+                Log.i(
+                    TAG,
+                    "Received ${messageBytes.size} bytes from $endpointId with uid $uid. Re-broadcasting."
+                )
+
+                // TODO: Do something with the messageBytes
+
+                // Re-broadcast to other connected endpoints.
+                val otherEndpoints = connectedEndpoints.filter { it != endpointId }
+                if (otherEndpoints.isNotEmpty()) {
+                    connectionsClient.sendPayload(
+                        otherEndpoints,
+                        Payload.fromBytes(bytes) // Send the original payload with UID
                     )
-                    // TODO: Got payload, do stuff.
-//                        scope.launch {
-//                            incomingPayloads.emit(endpointId to bytes)
-//                        }
                 }
-                // File or Stream not supported
-                else -> {
-                    Log.w(TAG, "Ignoring non-BYTES payload from $endpointId, type: ${payload.type}")
-                }
+            } else {
+                Log.w(TAG, "Ignoring non-BYTES payload from $endpointId, type: ${payload.type}")
             }
         }
 
@@ -105,43 +199,65 @@ class NearbyConnectionsManager(
         }
     }
 
+    private fun requestConnection(endpointId: String) {
+        Log.i(TAG, "Requesting connection to $endpointId")
+        connectionsClient.requestConnection(localName, endpointId, connectionLifecycleCallback)
+            .addOnSuccessListener {
+                Log.d(TAG, "Successfully requested connection to $endpointId")
+            }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "Failed to request connection to $endpointId", e)
+            }
+    }
+
     private val endpointDiscoveryCallback = object : EndpointDiscoveryCallback() {
         override fun onEndpointFound(
             endpointId: String, discoveredEndpointInfo: DiscoveredEndpointInfo
         ) {
-            Log.i(
-                TAG,
-                "EndpointDiscoveryCallback onEndpointFound $endpointId: $discoveredEndpointInfo"
-            )
-            if (connectedEndpoints.size >= maxPeers) {
+            Log.d(TAG, "onEndpointFound: $endpointId, ${discoveredEndpointInfo.endpointName}")
+            val parts = discoveredEndpointInfo.endpointName.split(":")
+            if (parts.size == 2) {
+                val connectionCount = parts[1].toIntOrNull()
+                if (connectionCount != null) {
+                    discoveredEndpoints[endpointId] = connectionCount
+                } else {
+                    Log.w(TAG, "Could not parse connection count: ${discoveredEndpointInfo.endpointName}")
+                    return
+                }
+            } else {
+                Log.w(TAG, "Unexpected endpoint name format: ${discoveredEndpointInfo.endpointName}")
+                return
+            }
+
+            val theirConnectionCount = discoveredEndpoints[endpointId] ?: return
+
+            if (connectedEndpoints.contains(endpointId)) {
+                return // Already connected
+            }
+
+            val myConnectionCount = connectedEndpoints.size
+
+            if (myConnectionCount >= MAX_CONNECTIONS) {
+                return // I'm full
+            }
+            if (theirConnectionCount >= MAX_CONNECTIONS) {
+                return // They're full
+            }
+
+            // Connect if either of us is below the minimum threshold.
+            if (myConnectionCount < MIN_CONNECTIONS || theirConnectionCount < MIN_CONNECTIONS) {
                 Log.i(
                     TAG,
-                    "Won't attempt to connect to $endpointId, already have ${connectedEndpoints.size} connections"
+                    "Either we ($myConnectionCount) or they ($theirConnectionCount) are low on connections. Connecting to $endpointId."
                 )
-                return
+                requestConnection(endpointId)
             }
-            if (endpointId > localName) {
-                Log.i(TAG, "Won't attempt to connect to $endpointId, it is a higher id than me")
-                return
-            }
-            Log.i(
-                TAG,
-                "Attempting connection to $endpointId (don't know yet if it will allow me to connect!)"
-            )
-            connectionsClient.requestConnection(localName, endpointId, connectionLifecycleCallback)
-                .addOnSuccessListener {
-                    Log.d(TAG, "Successfully requested connection to $endpointId")
-                }
-                .addOnFailureListener { e ->
-                    Log.e(TAG, "Failed to request connection to $endpointId", e)
-                }
         }
 
         override fun onEndpointLost(endpointId: String) {
             Log.i(TAG, "Endpoint lost: $endpointId")
-            // TODO: Handle lost endpoints.
+            discoveredEndpoints.remove(endpointId)
         }
-
     }
 
     private val connectionLifecycleCallback: ConnectionLifecycleCallback =
@@ -149,19 +265,12 @@ class NearbyConnectionsManager(
             override fun onConnectionInitiated(
                 endpointId: String, connectionInfo: ConnectionInfo
             ) {
-                Log.i(
-                    TAG,
-                    "ConnectionLifecycleCallback onConnectionInitiated $endpointId: $connectionInfo"
-                )
-                // Don't need to check here for higher/lower peer IDs, already covered in endpointDiscoveryCallback
-                if (connectedEndpoints.size < maxPeers) {
+                Log.i(TAG, "onConnectionInitiated from $endpointId")
+                if (connectedEndpoints.size < MAX_CONNECTIONS) {
                     Log.i(TAG, "Accepting connection from $endpointId")
                     connectionsClient.acceptConnection(endpointId, payloadCallback)
                 } else {
-                    Log.i(
-                        TAG,
-                        "Rejecting connection from $endpointId, already have ${connectedEndpoints.size} connections"
-                    )
+                    Log.i(TAG, "Rejecting connection from $endpointId, already at max connections.")
                     connectionsClient.rejectConnection(endpointId)
                 }
             }
@@ -169,30 +278,42 @@ class NearbyConnectionsManager(
             override fun onConnectionResult(
                 endpointId: String, resolution: ConnectionResolution
             ) {
-                Log.i(
-                    TAG,
-                    "ConnectionLifecycleCallback onConnectionResult $endpointId: $resolution"
-                )
                 if (resolution.status.isSuccess) {
                     Log.i(TAG, "Successfully connected to $endpointId")
                     connectedEndpoints.add(endpointId)
                 } else {
-                    Log.w(
-                        TAG,
-                        "Failed to connect to $endpointId: ${resolution.status} (did it already have enough peers?)"
-                    )
-                    // TODO: If you keep getting rejected, consider ban-listing.  Connections.disconnectFromEndpoint(GoogleApiClient, String).
+                    Log.w(TAG, "Failed to connect to $endpointId: ${resolution.status.statusMessage}")
                 }
             }
 
             override fun onDisconnected(endpointId: String) {
-                Log.i(TAG, "ConnectionLifecycleCallback onDisconnected $endpointId")
+                Log.i(TAG, "onDisconnected from $endpointId")
                 connectedEndpoints.remove(endpointId)
-            }
 
+                if (connectedEndpoints.size < MIN_CONNECTIONS) {
+                    Log.w(
+                        TAG,
+                        "Below minimum connections (${connectedEndpoints.size}), trying to find a new peer."
+                    )
+                    // Find the best candidate to connect to.
+                    val bestCandidate = discoveredEndpoints.entries
+                        .filter { !connectedEndpoints.contains(it.key) } // Not already connected
+                        .filter { it.value < MAX_CONNECTIONS }           // Not full
+                        .minByOrNull { it.value }                        // Least connected
+
+                    if (bestCandidate != null) {
+                        Log.i(TAG, "Aggressively reconnecting to ${bestCandidate.key}")
+                        requestConnection(bestCandidate.key)
+                    } else {
+                        Log.w(TAG, "No suitable candidate for reconnection found.")
+                    }
+                }
+            }
         }
 
     companion object {
         private const val TAG = "NCM"
+        private const val MIN_CONNECTIONS = 2
+        private const val MAX_CONNECTIONS = 4
     }
 }
