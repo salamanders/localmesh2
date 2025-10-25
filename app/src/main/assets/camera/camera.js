@@ -5,20 +5,14 @@ let deviceId = null;
 
 // Fetch the device ID to create unique filenames
 async function getDeviceId() {
-    const response = await fetch('/status');
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
-    if (!data.id) {
-        throw new Error(`Status error! data: ${data}`);
-    }
-    deviceId = data.id;
+    const status = JSON.parse(Android.getStatus());
+    deviceId = status.id;
 }
 
 getDeviceId();
 
 uploadButton.addEventListener('click', async () => {
+    console.info('uploadButton click');
     const file = cameraInput.files[0];
     if (!file) {
         alert('Please select a file first.');
@@ -92,7 +86,7 @@ function resizeImage(file, maxDimension) {
                     } else {
                         reject(new Error('Canvas to Blob conversion failed'));
                     }
-                }, 'image/jpeg', 0.9); // 90% quality
+                }, 'image/jpeg', 0.8);
             };
             img.onerror = reject;
             img.src = event.target.result;

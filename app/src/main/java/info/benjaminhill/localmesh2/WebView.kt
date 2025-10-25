@@ -38,10 +38,14 @@ fun FullScreenWebView(url: String) {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 settings.displayZoomControls = false
-                settings.allowFileAccess = true
+
                 settings.cacheMode = WebSettings.LOAD_NO_CACHE
                 settings.mediaPlaybackRequiresUserGesture = false
                 setLayerType(View.LAYER_TYPE_HARDWARE, null)
+
+                // TODO: Use the modern WebViewAssetLoader method.
+                settings.allowFileAccess = true
+                settings.allowFileAccessFromFileURLs = true
 
                 // Enables chrome://inspect
                 WebView.setWebContentsDebuggingEnabled(true)
@@ -63,7 +67,7 @@ fun FullScreenWebView(url: String) {
                             }
                         }
                     }
-
+// Instead of this, we are using JavaScriptInjectedAndroid
 //                    override fun shouldInterceptRequest(
 //                        view: WebView?,
 //                        request: WebResourceRequest?

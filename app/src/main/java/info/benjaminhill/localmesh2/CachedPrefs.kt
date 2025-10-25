@@ -34,7 +34,8 @@ object CachedPrefs {
      * input could be Settings.Secure.getString(context.contentResolver,Settings.Secure.ANDROID_ID)
      */
     fun getCharHash(input: String, length: Int = 6): String {
-        val base62Chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".toCharArray()
+        val base62Chars =
+            "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".toCharArray()
         val base = BigInteger.valueOf(base62Chars.size.toLong())
 
         val md5 = MessageDigest.getInstance("MD5").digest(input.toByteArray())

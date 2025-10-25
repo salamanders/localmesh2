@@ -33,10 +33,14 @@ async function updateStatus() {
             if(folder == 'camera') {
                 li.addEventListener('click', () => {
                     Android.sendPeerDisplayCommand('slideshow');
-                    window.location.href = '/camera/index.html';
+                    window.location.href = 'camera/index.html';
                 });
             } else {
-                li.addEventListener('click', () => Android.sendPeerDisplayCommand(folder));
+                // li.addEventListener('click', () => Android.sendPeerDisplayCommand(folder));
+                // TODO Just for debugging
+                li.addEventListener('click', () => {
+                    window.location.href = folder + '/index.html'
+                });
             }
             foldersList.appendChild(li);
         });
