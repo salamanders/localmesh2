@@ -1,9 +1,11 @@
 package info.benjaminhill.localmesh2
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
+import kotlinx.serialization.cbor.Cbor
 import java.util.UUID
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class NetworkMessage(
     /** A unique identifier for this message to prevent broadcast loops. */
@@ -17,7 +19,7 @@ data class NetworkMessage(
     /** Optional content of the message */
     val messageContent: String?,
 ) {
-    fun toByteArray(): ByteArray = Json.encodeToString(this).toByteArray()
+    fun toByteArray(): ByteArray = Cbor.encodeToByteArray(serializer(), this)
 
     companion object {
         enum class Types {
@@ -26,6 +28,6 @@ data class NetworkMessage(
         }
 
         fun fromByteArray(byteArray: ByteArray): NetworkMessage =
-            Json.decodeFromString(byteArray.decodeToString())
+            Cbor.decodeFromByteArray(serializer(), byteArray)
     }
 }
