@@ -8,19 +8,16 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.tooling.preview.Preview
-import info.benjaminhill.localmesh2.ui.theme.Localmesh2Theme
+import androidx.lifecycle.lifecycleScope
 
 class MainActivity : ComponentActivity() {
 
@@ -42,9 +39,9 @@ class MainActivity : ComponentActivity() {
 
         if (permissions.all { it.value }) {
             Log.i(TAG, "Permissions granted, starting service...")
-            nearbyConnectionsManager = NearbyConnectionsManager(this)
+            nearbyConnectionsManager = NearbyConnectionsManager(this, lifecycleScope)
             nearbyConnectionsManager.startDiscovery()
-            nearbyConnectionsManager.startAdvertising()
+            nearbyConnectionsManager.advertiseWithAccuratePeerCount()
 
             // Launch the DisplayActivity to show the main UI. Due to its 'singleTop' launchMode,
             // future P2P display commands will reuse this Activity instance by sending it a new Intent
@@ -67,7 +64,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
 
         setContent {
             Column(
@@ -83,29 +79,13 @@ class MainActivity : ComponentActivity() {
                         )
                     )
                 }) {
-                    Text("Start Service")
+                    Text("Authorize Mesh")
                 }
             }
         }
-
     }
 
     companion object {
         private const val TAG = "MainActivity"
-    }
-}
-
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!", modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    Localmesh2Theme {
-        Greeting("Android")
     }
 }

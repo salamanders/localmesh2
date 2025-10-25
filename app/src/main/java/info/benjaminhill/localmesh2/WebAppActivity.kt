@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -19,12 +18,17 @@ class WebAppActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "onCreate with intent: $intent")
 
-        enableEdgeToEdge()
+        // includes enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
+
         val controller = WindowCompat.getInsetsController(window, window.decorView)
-        controller.hide(WindowInsetsCompat.Type.statusBars())
-        controller.systemBarsBehavior =
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.let {
+            // Hide the navigation bars
+            it.hide(WindowInsetsCompat.Type.navigationBars() or WindowInsetsCompat.Type.statusBars())
+            // Allow swiping from the edge to show the system bars again
+            it.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
 
         // Handles index.html
         handleIntent(intent)

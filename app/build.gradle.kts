@@ -61,8 +61,9 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
-    // Networking
+    // App-Specific
     implementation(libs.google.play.services.nearby)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.androidx.fragment.ktx)
+    implementation(libs.kotlinx.serialization.json)
 }

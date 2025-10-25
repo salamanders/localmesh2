@@ -19,20 +19,30 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.random.Random
 import kotlin.time.Duration.Companion.minutes
 
+/**
+ * Manages all low-level interactions with the Google Nearby Connections API.
+ * This class is responsible for advertising, discovering, and managing the lifecycle of connections.
+ * It holds a reference to a [TopologyOptimizer] and delegates all strategic decisions
+ * (like when to connect, disconnect, or reshuffle) to it, acting as the "muscle" to the
+ * optimizer's "brain".
+ */
 class NearbyConnectionsManager(
     context: Context,
     private val scope: CoroutineScope,
 ) {
-    private var reshuffleJob: Job? = null
+
     private var messageCleanupJob: Job? = null
     private val serviceId = "info.benjaminhill.localmesh2"
     private val connectionsClient: ConnectionsClient = Nearby.getConnectionsClient(context)
     private val localName = CachedPrefs.getId(context)
+
+    // The "brain" of the mesh, making all strategic decisions.
+    private val topologyOptimizer: TopologyOptimizer =
+        TopologyOptimizer(scope, ::disconnectFromEndpoint, ::requestConnection)
+
     private val connectedEndpoints = mutableSetOf<String>()
 
     /**
@@ -48,7 +58,8 @@ class NearbyConnectionsManager(
      */
     private val seenMessageIds = ConcurrentHashMap<String, Long>()
 
-    fun startAdvertising() {
+    fun advertiseWithAccuratePeerCount() {
+        connectionsClient.stopAdvertising()
         // Strategy.P2P_CLUSTER is used as it supports M-to-N connections,
         // which is suitable for a dynamic snake topology where multiple
         // endpoints can be discovering or advertising simultaneously.
@@ -75,25 +86,30 @@ class NearbyConnectionsManager(
             serviceId, endpointDiscoveryCallback, discoveryOptions
         ).addOnSuccessListener {
             Log.i(TAG, "$localName started discovery.")
+            topologyOptimizer.start(connectedEndpoints, discoveredEndpoints)
         }.addOnFailureListener { e ->
             Log.e(TAG, "$localName failed to start discovery", e)
         }
-        startReshuffling()
         startMessageCleanup()
     }
 
     fun stop() {
         Log.i(TAG, "Stopping nearby connections.")
-        reshuffleJob?.cancel()
+        topologyOptimizer.stop()
         messageCleanupJob?.cancel()
         connectionsClient.stopAllEndpoints()
     }
 
-    fun broadcast(bytes: ByteArray) {
-        val uid = UUID.randomUUID().toString()
-        val payloadBytes = uid.toByteArray() + bytes
-        seenMessageIds[uid] = System.currentTimeMillis()
-        Log.i(TAG, "Broadcasting ${payloadBytes.size} bytes with uid $uid")
+    // TODO: Broadcasting a message to the network.
+    fun broadcast(type: NetworkMessage.Companion.Types, content: String) {
+        val message = NetworkMessage(
+            sendingNodeId = localName,
+            messageType = type,
+            messageContent = content,
+        )
+        val payloadBytes = message.toByteArray()
+        seenMessageIds[message.messageId] = System.currentTimeMillis()
+        Log.i(TAG, "Broadcasting ${payloadBytes.size} bytes with uid ${message.messageId}")
         connectionsClient.sendPayload(
             connectedEndpoints.toList(),
             Payload.fromBytes(payloadBytes)
@@ -111,58 +127,36 @@ class NearbyConnectionsManager(
         }
     }
 
-    private fun startReshuffling() {
-        reshuffleJob = scope.launch {
-            while (true) {
-                delay(1.minutes)
-                val myConnectionCount = connectedEndpoints.size
-                if (myConnectionCount < MIN_CONNECTIONS) {
-                    // Not enough connections to reshuffle.
-                    continue
-                }
-
-                // If all my peers are well-connected, drop one to find a new, less-connected peer.
-                val allPeersWellConnected = connectedEndpoints.all { endpointId ->
-                    (discoveredEndpoints[endpointId] ?: 0) >= 3
-                }
-
-                if (allPeersWellConnected) {
-                    val randomEndpoint = connectedEndpoints.randomOrNull()
-                    if (randomEndpoint != null) {
-                        Log.i(TAG, "Reshuffling: all peers are well-connected. Dropping $randomEndpoint.")
-                        connectionsClient.disconnectFromEndpoint(randomEndpoint)
-                    }
-                }
-            }
-        }
-    }
 
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
             if (payload.type == Payload.Type.BYTES) {
-                val bytes = payload.asBytes()!!
-                val uid = String(bytes.copyOfRange(0, 36))
-                val messageBytes = bytes.copyOfRange(36, bytes.size)
+                val receivedMessage = NetworkMessage.fromByteArray(payload.asBytes()!!)
 
-                if (seenMessageIds.containsKey(uid)) {
-                    Log.i(TAG, "Ignoring duplicate message from $endpointId with uid $uid")
+                if (seenMessageIds.containsKey(receivedMessage.messageId)) {
+                    Log.i(
+                        TAG,
+                        "Ignoring duplicate message from $endpointId with uid ${receivedMessage.messageId}"
+                    )
                     return
                 }
 
-                seenMessageIds[uid] = System.currentTimeMillis()
+                seenMessageIds[receivedMessage.messageId] = System.currentTimeMillis()
                 Log.i(
                     TAG,
-                    "Received ${messageBytes.size} bytes from $endpointId with uid $uid. Re-broadcasting."
+                    "Received message from $endpointId with uid ${receivedMessage.messageId}. Re-broadcasting."
                 )
 
-                // TODO: Do something with the messageBytes
+                // TODO: Do something with the message
 
-                // Re-broadcast to other connected endpoints.
+                // Re-broadcast to other connected endpoints with incremented hop count.
                 val otherEndpoints = connectedEndpoints.filter { it != endpointId }
                 if (otherEndpoints.isNotEmpty()) {
+                    val messageToRebroadcast =
+                        receivedMessage.copy(hopCount = receivedMessage.hopCount + 1)
                     connectionsClient.sendPayload(
                         otherEndpoints,
-                        Payload.fromBytes(bytes) // Send the original payload with UID
+                        Payload.fromBytes(messageToRebroadcast.toByteArray())
                     )
                 }
             } else {
@@ -210,6 +204,11 @@ class NearbyConnectionsManager(
             }
     }
 
+    private fun disconnectFromEndpoint(endpointId: String) {
+        Log.i(TAG, "Disconnecting from $endpointId")
+        connectionsClient.disconnectFromEndpoint(endpointId)
+    }
+
     private val endpointDiscoveryCallback = object : EndpointDiscoveryCallback() {
         override fun onEndpointFound(
             endpointId: String, discoveredEndpointInfo: DiscoveredEndpointInfo
@@ -221,34 +220,32 @@ class NearbyConnectionsManager(
                 if (connectionCount != null) {
                     discoveredEndpoints[endpointId] = connectionCount
                 } else {
-                    Log.w(TAG, "Could not parse connection count: ${discoveredEndpointInfo.endpointName}")
+                    Log.w(
+                        TAG,
+                        "Could not parse connection count: ${discoveredEndpointInfo.endpointName}"
+                    )
                     return
                 }
             } else {
-                Log.w(TAG, "Unexpected endpoint name format: ${discoveredEndpointInfo.endpointName}")
+                Log.w(
+                    TAG,
+                    "Unexpected endpoint name format: ${discoveredEndpointInfo.endpointName}"
+                )
                 return
             }
 
             val theirConnectionCount = discoveredEndpoints[endpointId] ?: return
 
-            if (connectedEndpoints.contains(endpointId)) {
-                return // Already connected
-            }
-
-            val myConnectionCount = connectedEndpoints.size
-
-            if (myConnectionCount >= MAX_CONNECTIONS) {
-                return // I'm full
-            }
-            if (theirConnectionCount >= MAX_CONNECTIONS) {
-                return // They're full
-            }
-
-            // Connect if either of us is below the minimum threshold.
-            if (myConnectionCount < MIN_CONNECTIONS || theirConnectionCount < MIN_CONNECTIONS) {
+            if (topologyOptimizer.shouldConnectTo(
+                    endpointId,
+                    theirConnectionCount,
+                    connectedEndpoints.size,
+                    connectedEndpoints
+                )
+            ) {
                 Log.i(
                     TAG,
-                    "Either we ($myConnectionCount) or they ($theirConnectionCount) are low on connections. Connecting to $endpointId."
+                    "TopologyOptimizer decided to connect to $endpointId. Requesting connection."
                 )
                 requestConnection(endpointId)
             }
@@ -266,11 +263,14 @@ class NearbyConnectionsManager(
                 endpointId: String, connectionInfo: ConnectionInfo
             ) {
                 Log.i(TAG, "onConnectionInitiated from $endpointId")
-                if (connectedEndpoints.size < MAX_CONNECTIONS) {
+                if (connectedEndpoints.size < 7) {
                     Log.i(TAG, "Accepting connection from $endpointId")
                     connectionsClient.acceptConnection(endpointId, payloadCallback)
                 } else {
-                    Log.i(TAG, "Rejecting connection from $endpointId, already at max connections.")
+                    Log.i(
+                        TAG,
+                        "Rejecting connection from $endpointId, already at max connections (7+)."
+                    )
                     connectionsClient.rejectConnection(endpointId)
                 }
             }
@@ -281,39 +281,24 @@ class NearbyConnectionsManager(
                 if (resolution.status.isSuccess) {
                     Log.i(TAG, "Successfully connected to $endpointId")
                     connectedEndpoints.add(endpointId)
+                    advertiseWithAccuratePeerCount()
                 } else {
-                    Log.w(TAG, "Failed to connect to $endpointId: ${resolution.status.statusMessage}")
+                    Log.w(
+                        TAG,
+                        "Failed to connect to $endpointId: ${resolution.status.statusMessage}"
+                    )
                 }
             }
 
             override fun onDisconnected(endpointId: String) {
                 Log.i(TAG, "onDisconnected from $endpointId")
                 connectedEndpoints.remove(endpointId)
-
-                if (connectedEndpoints.size < MIN_CONNECTIONS) {
-                    Log.w(
-                        TAG,
-                        "Below minimum connections (${connectedEndpoints.size}), trying to find a new peer."
-                    )
-                    // Find the best candidate to connect to.
-                    val bestCandidate = discoveredEndpoints.entries
-                        .filter { !connectedEndpoints.contains(it.key) } // Not already connected
-                        .filter { it.value < MAX_CONNECTIONS }           // Not full
-                        .minByOrNull { it.value }                        // Least connected
-
-                    if (bestCandidate != null) {
-                        Log.i(TAG, "Aggressively reconnecting to ${bestCandidate.key}")
-                        requestConnection(bestCandidate.key)
-                    } else {
-                        Log.w(TAG, "No suitable candidate for reconnection found.")
-                    }
-                }
+                advertiseWithAccuratePeerCount()
+                topologyOptimizer.onDisconnected(connectedEndpoints, discoveredEndpoints)
             }
         }
 
     companion object {
         private const val TAG = "NCM"
-        private const val MIN_CONNECTIONS = 2
-        private const val MAX_CONNECTIONS = 4
     }
 }

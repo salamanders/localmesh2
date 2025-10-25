@@ -38,12 +38,14 @@ class JavaScriptInjectedAndroid(private val context: Context) {
     fun getStatus(): String = JSONObject().apply {
         put("visualizations", JSONArray(visualizations))
         put("id", CachedPrefs.getId(context))
-        val peersList = listOf(
-            mapOf("id" to "abc", "hops" to 1, "age" to 1234567890),
-            mapOf("id" to "def", "hops" to 1, "age" to 1234567890),
-            mapOf("id" to "ghi", "hops" to 2, "age" to 1234567890),
+        put(
+            "peers", JSONArray(
+                listOf(
+                    mapOf("id" to "abc", "hops" to 1, "age" to 1234567890),
+                    mapOf("id" to "def", "hops" to 1, "age" to 1234567890),
+                    mapOf("id" to "ghi", "hops" to 2, "age" to 1234567890),
+                ).map { JSONObject(it as Map<String, Any>) })
         )
-        put("peers", JSONArray(peersList.map { JSONObject(it as Map<*, *>) }))
         put("timestamp", System.currentTimeMillis())
     }.toString()
 
@@ -54,6 +56,6 @@ class JavaScriptInjectedAndroid(private val context: Context) {
     }
 
     companion object {
-        const val TAG = "JavaScriptInjectedAndroid"
+        const val TAG = "JSInjectedAndroid"
     }
 }
