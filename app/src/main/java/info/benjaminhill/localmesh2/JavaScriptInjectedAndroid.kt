@@ -38,10 +38,7 @@ class JavaScriptInjectedAndroid(private val context: Context) {
     @JavascriptInterface
     fun sendPeerDisplayCommand(folder: String) {
         Log.d(TAG, "sendPeerDisplayCommand: $folder")
-        NearbyConnectionsManager.broadcast(
-            type = NetworkMessage.Companion.Types.DISPLAY,
-            content = folder
-        )
+        NearbyConnectionsManager.broadcastDisplayMessage(folder)
     }
 
     companion object {
