@@ -9,17 +9,18 @@ object EndpointRegistry {
 
     /** Gets an existing endpoint or creates a new one, logging its creation. Always updates the ts */
     fun get(endpointId: String, autoUpdateTs: Boolean = true): Endpoint {
-        return allEndpoints.getOrPut(endpointId) {
+        val endpoint = allEndpoints.getOrPut(endpointId) {
             Log.d(TAG, "Creating new endpoint for $endpointId")
             Endpoint(
                 id = endpointId,
                 lastUpdatedTs = System.currentTimeMillis(),
                 distance = null,
-            ).also {
-                if (autoUpdateTs)
-                    it.lastUpdatedTs = System.currentTimeMillis()
-            }
+            )
         }
+        if (autoUpdateTs) {
+            endpoint.lastUpdatedTs = System.currentTimeMillis()
+        }
+        return endpoint
     }
 
     // All peers.  Shallow copy, so edits are ok.
