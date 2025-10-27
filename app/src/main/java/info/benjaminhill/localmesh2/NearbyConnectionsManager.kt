@@ -237,6 +237,14 @@ object NearbyConnectionsManager {
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to parse gossip message", e)
                     }
+                } else if (receivedMessage.messageType == NetworkMessage.Companion.Types.DISPLAY) {
+                    if (receivedMessage.sendingNodeId != localId) {
+                        Log.i(
+                            TAG,
+                            "Received display command from ${receivedMessage.sendingNodeId} to display ${receivedMessage.messageContent}"
+                        )
+                        WebAppActivity.navigateTo(receivedMessage.messageContent!!)
+                    }
                 }
 
                 // Re-broadcast to other connected endpoints with incremented hop count.

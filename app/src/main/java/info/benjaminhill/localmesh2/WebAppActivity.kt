@@ -40,6 +40,18 @@ class WebAppActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        instance = this
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (instance == this) {
+            instance = null
+        }
+    }
+
     private fun handleIntent(intent: Intent?) {
         intent?.extras?.let { bundle ->
             for (key in bundle.keySet()) {
@@ -49,10 +61,25 @@ class WebAppActivity : ComponentActivity() {
         pathState.value = intent?.getStringExtra(EXTRA_PATH) ?: "index.html"
     }
 
+    /** Should only be called from the static navigateTo */
+    private fun navigateTo(path: String) {
+        if (path.isNotBlank()) {
+            Log.i(TAG, "Navigating to $path")
+            pathState.value = "$path/index.html"
+        }
+    }
+
+
     companion object {
         private const val TAG = "WebAppActivity"
 
         /** Intent extra key for the content path to display. */
         const val EXTRA_PATH = "info.benjaminhill.localmesh2.EXTRA_PATH"
+        private var instance: WebAppActivity? = null
+        fun navigateTo(path: String) {
+            instance?.runOnUiThread {
+                instance?.navigateTo(path)
+            }
+        }
     }
 }
