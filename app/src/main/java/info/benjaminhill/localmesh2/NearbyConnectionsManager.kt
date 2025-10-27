@@ -235,14 +235,18 @@ object NearbyConnectionsManager {
                             Gossip.serializer(),
                             receivedMessage.messageContent!!
                         )
-                        Log.d(TAG, "Received gossip from $endpointId with peers: ${gossip.peers}")
+                        Log.d(
+                            TAG,
+                            "Received gossip from ${receivedMessage.sendingNodeId} via $endpointId with peers: ${gossip.peers}"
+                        )
 
-                        val senderEndpoint = EndpointRegistry.get(endpointId)
-                        senderEndpoint.immediatePeerIds = gossip.peers
+                        val originalSenderEndpoint =
+                            EndpointRegistry.get(receivedMessage.sendingNodeId)
+                        originalSenderEndpoint.immediatePeerIds = gossip.peers
 
-                        val senderDistance = senderEndpoint.distance
-                        if (senderDistance != null) {
-                            val newDistance = senderDistance + 1
+                        val originalSenderDistance = originalSenderEndpoint.distance
+                        if (originalSenderDistance != null) {
+                            val newDistance = originalSenderDistance + 1
                             gossip.peers.forEach { peerId ->
                                 if (peerId != localId) {
                                     val endpoint = EndpointRegistry.get(peerId)
@@ -254,7 +258,7 @@ object NearbyConnectionsManager {
                         } else {
                             Log.w(
                                 TAG,
-                                "Received gossip from endpoint $endpointId with unknown distance, cannot process."
+                                "Received gossip from endpoint ${receivedMessage.sendingNodeId} with unknown distance, cannot process."
                             )
                         }
                     } catch (e: Exception) {
@@ -268,18 +272,17 @@ object NearbyConnectionsManager {
                         )
                         WebAppActivity.navigateTo(receivedMessage.messageContent!!)
                     }
-                }
-
-                // Re-broadcast to other connected endpoints with incremented hop count.
-                val otherEndpoints =
-                    EndpointRegistry.getDirectlyConnectedEndpoints().filter { it.id != endpointId }
-                if (otherEndpoints.isNotEmpty()) {
-                    val messageToRebroadcast =
-                        receivedMessage.copy(hopCount = receivedMessage.hopCount + 1)
-                    connectionsClient.sendPayload(
-                        otherEndpoints.map { it.id },
-                        Payload.fromBytes(messageToRebroadcast.toByteArray())
-                    )
+                    // Re-broadcast to other connected endpoints
+                    val otherEndpoints =
+                        EndpointRegistry.getDirectlyConnectedEndpoints().filter { it.id != endpointId }
+                    if (otherEndpoints.isNotEmpty()) {
+                        val messageToRebroadcast =
+                            receivedMessage.copy(hopCount = receivedMessage.hopCount + 1)
+                        connectionsClient.sendPayload(
+                            otherEndpoints.map { it.id },
+                            Payload.fromBytes(messageToRebroadcast.toByteArray())
+                        )
+                    }
                 }
             } else {
                 Log.w(TAG, "Ignoring non-BYTES payload from $endpointId, type: ${payload.type}")

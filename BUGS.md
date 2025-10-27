@@ -15,6 +15,18 @@ Attempts:
   not advertising and `startMesh()` is not being called.
 
 ---
+Severity: High
+State: Open
+Description: Gossip messages are not re-broadcast. The `payloadCallback` in `NearbyConnectionsManager.kt` processes incoming `GOSSIP` messages but does not forward them to other connected peers. This severely limits the network's ability to build a complete topology map, as information about distant nodes (more than one hop away) is never propagated. This will prevent network-wide broadcasts, such as the "display" command, from reaching all 20 devices.
+Location in Code: `app/src/main/java/info/benjaminhill/localmesh2/NearbyConnectionsManager.kt`
+
+---
+Severity: Medium
+State: Open
+Description: The `get` function in `EndpointRegistry.kt` does not update the `lastUpdatedTs` timestamp for existing `Endpoint` objects. This can lead to the `reshuffle` logic in `NearbyConnectionsManager.kt` making decisions based on stale data, potentially causing it to disconnect from active peers or fail to connect to new ones.
+Location in Code: `app/src/main/java/info/benjaminhill/localmesh2/EndpointRegistry.kt`
+
+---
 Severity: Medium
 State: Closed
 Description: The application is experiencing errors in `onPayloadTransferUpdate`, specifically when
