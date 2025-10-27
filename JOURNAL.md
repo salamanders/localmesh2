@@ -308,29 +308,40 @@ project could be a good starting point:
 - [X] Complete pre-commit steps.
 - [X] Submit the change.
 
-
-
-
 # Future Features from `TopologyOptimizer`
 
-The `docs/TODOs.md` file contained a commented-out implementation of a `TopologyOptimizer` object. While the `reshuffle` logic has been implemented directly in `NearbyConnectionsManager` for simplicity, the `TopologyOptimizer` contained several valuable ideas for future improvements.
+The `docs/TODOs.md` file contained a commented-out implementation of a `TopologyOptimizer` object.
+While the `reshuffle` logic has been implemented directly in `NearbyConnectionsManager` for
+simplicity, the `TopologyOptimizer` contained several valuable ideas for future improvements.
 
 ## 1. Intelligent Connection Decisions
 
-*   **Concept:** The original `shouldConnectTo` function in `TopologyOptimizer` considered the connection count of the remote endpoint when deciding whether to connect. This information would have been encoded in the endpoint name.
-*   **Value:** This would allow the node to make more intelligent connection decisions, for example, by prioritizing connections to nodes with fewer peers. This would help to build a more balanced and robust network topology.
+* **Concept:** The original `shouldConnectTo` function in `TopologyOptimizer` considered the
+  connection count of the remote endpoint when deciding whether to connect. This information would
+  have been encoded in the endpoint name.
+* **Value:** This would allow the node to make more intelligent connection decisions, for example,
+  by prioritizing connections to nodes with fewer peers. This would help to build a more balanced
+  and robust network topology.
 
 ## 2. Safe Disconnection Logic (Implemented)
 
-*   **Concept:** A peer should only be dropped if it remains reachable through a 2-hop path.
-*   **Implementation:** The `findRedundantPeer` function now calculates a "redundancy score" for each direct peer. The score is the number of other peers that also provide a path to the candidate peer. The peer with the highest score is chosen to be dropped. This ensures network connectivity is maintained when making room for new nodes.
+* **Concept:** A peer should only be dropped if it remains reachable through a 2-hop path.
+* **Implementation:** The `findRedundantPeer` function now calculates a "redundancy score" for each
+  direct peer. The score is the number of other peers that also provide a path to the candidate
+  peer. The peer with the highest score is chosen to be dropped. This ensures network connectivity
+  is maintained when making room for new nodes.
 
 ## 3. Proactive Churn for Network Discovery
 
-*   **Concept:** The `TopologyOptimizer` contained logic to proactively drop a well-connected peer if all of its current peers were also well-connected.
-*   **Value:** This "proactive churn" would help the network to discover new nodes and prevent it from stagnating in a stable but suboptimal topology. This is especially important for discovering new islands.
+* **Concept:** The `TopologyOptimizer` contained logic to proactively drop a well-connected peer if
+  all of its current peers were also well-connected.
+* **Value:** This "proactive churn" would help the network to discover new nodes and prevent it from
+  stagnating in a stable but suboptimal topology. This is especially important for discovering new
+  islands.
 
 ## 4. Aggressive Reconnection
 
-*   **Concept:** The `onDisconnected` function in `TopologyOptimizer` contained logic to "aggressively reconnect" to a new peer if the number of connections dropped below a minimum threshold.
-*   **Value:** This would ensure that the node always maintains a minimum level of connectivity, making the network more resilient to node failures.
+* **Concept:** The `onDisconnected` function in `TopologyOptimizer` contained logic to "aggressively
+  reconnect" to a new peer if the number of connections dropped below a minimum threshold.
+* **Value:** This would ensure that the node always maintains a minimum level of connectivity,
+  making the network more resilient to node failures.

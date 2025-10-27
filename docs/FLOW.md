@@ -29,8 +29,8 @@ optimized.
 5. **`findRedundantPeer` Triggered:** `Node1` receives the request but already has 7 connections (
    its limit). Instead of rejecting the connection, it invokes the `findRedundantPeer()` function to
    make room. It examines its directly connected peers and finds that they are all at a distance of
-   1. It will select one of them to disconnect from. For this example, we'll assume it chooses to
-   disconnect from `Node8`. #QA:OK
+    1. It will select one of them to disconnect from. For this example, we'll assume it chooses to
+       disconnect from `Node8`. #QA:OK
 
 6. **Connection Shift:**
     * `Node1` disconnects from `Node8`. `Node1`'s connection count drops to 6; `Node8`'s also drops
@@ -51,12 +51,14 @@ optimized.
     * `Node1`, `Node2`, `Node3`: Each has dropped one of their original peers to connect to
       `NewNode`. (7 connections each) #QA:OK
     * The nodes that were dropped (e.g., `Node8`) now have fewer connections and will use their own
-      `reshuffle()` logic to find and connect to `NewNode`, further integrating it into the mesh. #QA:OK
+      `reshuffle()` logic to find and connect to `NewNode`, further integrating it into the mesh.
+      #QA:OK
 
 ## Phase 2: Gossip messages reach a steady state
 
 **Start State:** `NewNode` has established its initial connections (to `Node1`, `Node2`, `Node3`)
-into the mesh. The network topology is temporarily unstable due to the recent connection shifts. #QA:OK
+into the mesh. The network topology is temporarily unstable due to the recent connection shifts.
+#QA:OK
 
 **End State:** All nodes in the network have a complete and accurate map of the network topology in
 their respective `EndpointRegistry`. #QA:OK
@@ -69,15 +71,17 @@ their respective `EndpointRegistry`. #QA:OK
     * `Node1`, `Node2`, and `Node3` each send their full list of peers to `NewNode`. #QA:OK
 
 2. **Registry Update on `NewNode`:** `NewNode` processes the gossip from its peers.
-   * It learns about `Node4` through `Node8` for the first time. #QA:OK
-   * It registers these new nodes with a distance of 2 (since they are 1 hop away from its direct
-     connections). #QA:OK
-   * Its `EndpointRegistry` now contains all 9 nodes in the network. #QA:OK
+    * It learns about `Node4` through `Node8` for the first time. #QA:OK
+    * It registers these new nodes with a distance of 2 (since they are 1 hop away from its direct
+      connections). #QA:OK
+    * Its `EndpointRegistry` now contains all 9 nodes in the network. #QA:OK
 
 3. **Registry Update on the Main Network:**
-   * `Node1`, `Node2`, and `Node3` update their registries to show `NewNode` at a distance of 1. #QA:OK
-   * Through subsequent gossip exchanges, this information propagates. For instance, when `Node1`
-     gossips with `Node4`, `Node4` learns about `NewNode` and registers it at a distance of 2. #QA:OK
+    * `Node1`, `Node2`, and `Node3` update their registries to show `NewNode` at a distance of 1.
+      #QA:OK
+    * Through subsequent gossip exchanges, this information propagates. For instance, when `Node1`
+      gossips with `Node4`, `Node4` learns about `NewNode` and registers it at a distance of 2. #QA:
+      OK
 
 4. **Reaching a Steady State:** After a few cycles of the periodic gossip exchange (typically
    within 30-60 seconds), the information about `NewNode` and the other connection changes will
@@ -107,30 +111,32 @@ have a stable view of the network topology. #QA:OK
 
 4. **Message Flooding:** `Node1` sends this message to all of its direct peers (e.g., `NewNode`,
    `Node2`, etc.). #QA:OK
-   * The message contains a unique ID, which is immediately stored in the `seenMessageIds` map on
-     `Node1` to prevent processing duplicate messages. #QA:OK
+    * The message contains a unique ID, which is immediately stored in the `seenMessageIds` map on
+      `Node1` to prevent processing duplicate messages. #QA:OK
 
 5. **First Hop Reception (`NewNode`):**
-   * `NewNode` receives the `DISPLAY` message from `Node1`. The `onPayloadReceived` callback in
-     `NearbyConnectionsManager` is triggered. #QA:OK
-   * Inside this callback, the code checks the message ID against its `seenMessageIds` map. The ID
-     is new, so it proceeds. #QA:OK
-   * The payload is parsed, the message type is identified as `DISPLAY`, and the
-     `WebAppActivity.navigateTo("disco")` function is called. #QA:OK
-   * The `WebAppActivity` on `NewNode` receives this command and, executing on the main UI thread,
-     updates the `FullScreenWebView`'s URL to `file:///android_asset/disco/index.html`. #QA:OK
-   * **End State Reached for one node:** `NewNode` is now displaying the "disco" visualization. #QA:OK
+    * `NewNode` receives the `DISPLAY` message from `Node1`. The `onPayloadReceived` callback in
+      `NearbyConnectionsManager` is triggered. #QA:OK
+    * Inside this callback, the code checks the message ID against its `seenMessageIds` map. The ID
+      is new, so it proceeds. #QA:OK
+    * The payload is parsed, the message type is identified as `DISPLAY`, and the
+      `WebAppActivity.navigateTo("disco")` function is called. #QA:OK
+    * The `WebAppActivity` on `NewNode` receives this command and, executing on the main UI thread,
+      updates the `FullScreenWebView`'s URL to `file:///android_asset/disco/index.html`. #QA:OK
+    * **End State Reached for one node:** `NewNode` is now displaying the "disco" visualization.
+      #QA:OK
 
 6. **Message Re-broadcast:**
-   * After processing the message, `NewNode` re-broadcasts the message (with an incremented hop count) to all of its
-     peers except for `Node1` (the node it received the message from). #QA:OK
+    * After processing the message, `NewNode` re-broadcasts the message (with an incremented hop
+      count) to all of its
+      peers except for `Node1` (the node it received the message from). #QA:OK
 
 7. **Subsequent Hops & Loop Prevention:**
-   * Other nodes (like `Node2`, `Node4`, etc.) also receive, process, and re-broadcast the message
-     in the same manner. #QA:OK
-   * If a node receives a message with an ID that is already in its `seenMessageIds` map, it
-     ignores the message completely, preventing infinite loops. #QA:OK
-   * This flooding mechanism ensures the command propagates rapidly and efficiently throughout the
-     entire 9-node mesh network until all nodes are displaying the visualization. The
-     `onPayloadTransferUpdate` is used to monitor the progress of the byte transfer for the
-     payload, but the core logic for acting on the message resides in `onPayloadReceived`. #QA:OK
+    * Other nodes (like `Node2`, `Node4`, etc.) also receive, process, and re-broadcast the message
+      in the same manner. #QA:OK
+    * If a node receives a message with an ID that is already in its `seenMessageIds` map, it
+      ignores the message completely, preventing infinite loops. #QA:OK
+    * This flooding mechanism ensures the command propagates rapidly and efficiently throughout the
+      entire 9-node mesh network until all nodes are displaying the visualization. The
+      `onPayloadTransferUpdate` is used to monitor the progress of the byte transfer for the
+      payload, but the core logic for acting on the message resides in `onPayloadReceived`. #QA:OK

@@ -176,8 +176,9 @@ object NearbyConnectionsManager {
         }
 
         // Find the peer with the highest score, using immediateConnections as a tie-breaker
-        return immediatePeers.maxWithOrNull(compareBy(
-            { redundancyScores[it] ?: 0 }, // Primary criteria: redundancy score
+        return immediatePeers.maxWithOrNull(
+            compareBy(
+                { redundancyScores[it] ?: 0 }, // Primary criteria: redundancy score
             { it.immediateConnections ?: 0 }  // Secondary criteria: connection count
         ))
     }
@@ -251,7 +252,10 @@ object NearbyConnectionsManager {
                                 }
                             }
                         } else {
-                            Log.w(TAG, "Received gossip from endpoint $endpointId with unknown distance, cannot process.")
+                            Log.w(
+                                TAG,
+                                "Received gossip from endpoint $endpointId with unknown distance, cannot process."
+                            )
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to parse gossip message", e)
@@ -363,14 +367,23 @@ object NearbyConnectionsManager {
                 val endpoint = EndpointRegistry.get(endpointId)
                 Log.d(TAG, "onConnectionInitiated from ${endpoint.id}")
                 if (EndpointRegistry.getDirectlyConnectedEndpoints().size >= MAX_CONNECTIONS_HARDWARE_LIMIT) {
-                    Log.w(TAG, "At connection limit. Finding a redundant peer to make room for $endpointId.")
+                    Log.w(
+                        TAG,
+                        "At connection limit. Finding a redundant peer to make room for $endpointId."
+                    )
                     val redundantPeer = findRedundantPeer()
                     if (redundantPeer != null) {
-                        Log.i(TAG, "Making room for $endpointId by disconnecting from redundant peer ${redundantPeer.id}")
+                        Log.i(
+                            TAG,
+                            "Making room for $endpointId by disconnecting from redundant peer ${redundantPeer.id}"
+                        )
                         disconnectFromEndpoint(redundantPeer.id)
                         connectionsClient.acceptConnection(endpointId, payloadCallback)
                     } else {
-                        Log.e(TAG, "At connection limit but couldn't find a redundant peer. Rejecting $endpointId.")
+                        Log.e(
+                            TAG,
+                            "At connection limit but couldn't find a redundant peer. Rejecting $endpointId."
+                        )
                         connectionsClient.rejectConnection(endpointId)
                     }
                     return

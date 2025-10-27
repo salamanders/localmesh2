@@ -1,7 +1,8 @@
 # Enhanced Peer Dropping Algorithm
 
 **Status: Implemented**
-This feature has been implemented as described. The document is kept for historical and architectural reference.
+This feature has been implemented as described. The document is kept for historical and
+architectural reference.
 
 ---
 

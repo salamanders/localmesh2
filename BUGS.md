@@ -3,16 +3,29 @@
 ---
 Severity: High
 State: Open
-Description: One of the devices in the test group, `6ZwRq` (device ID `9B071FFAZ0018X`), is not connecting to more than one peer. The investigation revealed that the app on this device is not advertising itself on the network because the `startMesh()` function in `MainActivity.kt` is not being called. The app appears to be getting stuck during its initial startup sequence, before the permission check.
+Description: One of the devices in the test group, `6ZwRq` (device ID `9B071FFAZ0018X`), is not
+connecting to more than one peer. The investigation revealed that the app on this device is not
+advertising itself on the network because the `startMesh()` function in `MainActivity.kt` is not
+being called. The app appears to be getting stuck during its initial startup sequence, before the
+permission check.
 Location in Code: `MainActivity.kt`
 Attempts:
-- 2025-10-27: Cleared logcats, restarted the app, and analyzed the logs. Found that the device is not advertising and `startMesh()` is not being called.
+
+- 2025-10-27: Cleared logcats, restarted the app, and analyzed the logs. Found that the device is
+  not advertising and `startMesh()` is not being called.
 
 ---
 Severity: Medium
 State: Closed
-Description: The application is experiencing errors in `onPayloadTransferUpdate`, specifically when a payload transfer fails. The logging is not clear enough to diagnose the root cause. The error message `ClientProxy(...) failed to report onPayloadTransferUpdate(...) due to endpoint not connected` suggests a race condition where a device disconnects while a payload is in flight.
-Resolution: This issue was resolved by making the reshuffling logic in `NearbyConnectionsManager.kt` less aggressive. The reshuffling is now only triggered when it is "worth it" (i.e., when there is a distant or unknown node to connect to). This has significantly reduced the churn in the network and eliminated the payload transfer failures.
+Description: The application is experiencing errors in `onPayloadTransferUpdate`, specifically when
+a payload transfer fails. The logging is not clear enough to diagnose the root cause. The error
+message
+`ClientProxy(...) failed to report onPayloadTransferUpdate(...) due to endpoint not connected`
+suggests a race condition where a device disconnects while a payload is in flight.
+Resolution: This issue was resolved by making the reshuffling logic in `NearbyConnectionsManager.kt`
+less aggressive. The reshuffling is now only triggered when it is "worth it" (i.e., when there is a
+distant or unknown node to connect to). This has significantly reduced the churn in the network and
+eliminated the payload transfer failures.
 Location in Code: `NearbyConnectionsManager.kt` in the `onPayloadTransferUpdate` function.
 Attempts:
 
