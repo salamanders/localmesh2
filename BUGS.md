@@ -16,8 +16,9 @@ Attempts:
 
 ---
 Severity: High
-State: Open
+State: Closed
 Description: Gossip messages are not re-broadcast. The `payloadCallback` in `NearbyConnectionsManager.kt` processes incoming `GOSSIP` messages but does not forward them to other connected peers. This severely limits the network's ability to build a complete topology map, as information about distant nodes (more than one hop away) is never propagated. This will prevent network-wide broadcasts, such as the "display" command, from reaching all 20 devices.
+Resolution: This issue was resolved by refactoring the `onPayloadReceived` method to unconditionally rebroadcast all incoming messages to all connected peers, except for the original sender. A new helper function, `sendToAll`, was created to consolidate the sending logic and reduce code duplication.
 Location in Code: `app/src/main/java/info/benjaminhill/localmesh2/NearbyConnectionsManager.kt`
 
 ---
@@ -120,7 +121,7 @@ Attempts:
                `NearbyConnectionsManager.stop()` from it. Also add a log statement to `onDestroy()`.
             3. Build and deploy the app.
             4. Examine the logcat for the new `stop()` and `onDestroy()` messages, and to see if the
-               `STATUS_ALREADY_CONNECTED_TO_ENDPOINT` errors are resolved.
+               `STATUS_ALREADY_CONNECTED_to_ENDPOINT` errors are resolved.
     7. **Fix: App Shutdown Race Condition**:
         * **Observation**: The logs from the previous experiment showed that
           `MainActivity.onDestroy()` and `NearbyConnectionsManager.stop()` were being called almost

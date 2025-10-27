@@ -79,9 +79,11 @@ their respective `EndpointRegistry`. #QA:OK
 3. **Registry Update on the Main Network:**
     * `Node1`, `Node2`, and `Node3` update their registries to show `NewNode` at a distance of 1.
       #QA:OK
-    * Through subsequent gossip exchanges, this information propagates. For instance, when `Node1`
-      gossips with `Node4`, `Node4` learns about `NewNode` and registers it at a distance of 2. #QA:
-      OK
+    * This information propagates rapidly through the network. When a node receives a `GOSSIP`
+      message, it not only processes it but also immediately re-broadcasts it to its other peers.
+      This ensures that topology changes spread much faster than waiting for the next periodic
+      gossip cycle. For instance, when `Node1` gossips with `Node4`, `Node4` learns about `NewNode`
+      and registers it at a distance of 2. #QA:OK
 
 4. **Reaching a Steady State:** After a few cycles of the periodic gossip exchange (typically
    within 30-60 seconds), the information about `NewNode` and the other connection changes will
@@ -114,22 +116,25 @@ have a stable view of the network topology. #QA:OK
     * The message contains a unique ID, which is immediately stored in the `seenMessageIds` map on
       `Node1` to prevent processing duplicate messages. #QA:OK
 
-5. **First Hop Reception (`NewNode`):**
-    * `NewNode` receives the `DISPLAY` message from `Node1`. The `onPayloadReceived` callback in
+5. **First Hop Reception & Processing (`NewNode`):**
+    * `NewNode` receives the message from `Node1`. The `onPayloadReceived` callback in
       `NearbyConnectionsManager` is triggered. #QA:OK
-    * Inside this callback, the code checks the message ID against its `seenMessageIds` map. The ID
-      is new, so it proceeds. #QA:OK
-    * The payload is parsed, the message type is identified as `DISPLAY`, and the
-      `WebAppActivity.navigateTo("disco")` function is called. #QA:OK
+    * Inside this callback, the code first checks the message ID against its `seenMessageIds` map. The ID
+      is new, so it is added to the map and the message is processed. #QA:OK
+    * The code then inspects the `messageType`. In this case, it's a `DISPLAY` message, so the
+      `WebAppActivity.navigateTo("disco")` function is called. If it had been a `GOSSIP` message,
+      the `EndpointRegistry` would have been updated with the new topology information. #QA:OK
     * The `WebAppActivity` on `NewNode` receives this command and, executing on the main UI thread,
       updates the `FullScreenWebView`'s URL to `file:///android_asset/disco/index.html`. #QA:OK
     * **End State Reached for one node:** `NewNode` is now displaying the "disco" visualization.
       #QA:OK
 
-6. **Message Re-broadcast:**
-    * After processing the message, `NewNode` re-broadcasts the message (with an incremented hop
-      count) to all of its
-      peers except for `Node1` (the node it received the message from). #QA:OK
+6. **Universal Message Re-broadcast:**
+    * After processing the payload, the `onPayloadReceived` function unconditionally re-broadcasts the
+      message (with an incremented hop count) to all of its peers except for the original sender
+      (`Node1`). #QA:OK
+    * This logic is now universal for all message types, ensuring both `DISPLAY` commands and `GOSSIP`
+      updates propagate through the network using the same efficient flooding mechanism. #QA:OK
 
 7. **Subsequent Hops & Loop Prevention:**
     * Other nodes (like `Node2`, `Node4`, etc.) also receive, process, and re-broadcast the message

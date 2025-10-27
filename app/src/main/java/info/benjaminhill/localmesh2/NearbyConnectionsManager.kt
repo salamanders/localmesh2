@@ -132,17 +132,12 @@ object NearbyConnectionsManager {
             messageType = NetworkMessage.Companion.Types.GOSSIP,
             messageContent = Json.encodeToString(Gossip.serializer(), gossip),
         )
-        val payloadBytes = message.toByteArray()
         seenMessageIds[message.messageId] = System.currentTimeMillis()
         Log.i(
             TAG,
-            "Broadcasting gossip ${payloadBytes.size} bytes with uid ${message.messageId} to ${connectedEndpoints.map { it.id }}"
+            "Broadcasting gossip ${message.toByteArray().size} bytes with uid ${message.messageId} to ${connectedEndpoints.map { it.id }}"
         )
-
-        connectionsClient.sendPayload(
-            connectedEndpoints.map { it.id },
-            Payload.fromBytes(payloadBytes)
-        )
+        sendToAll(message)
     }
 
 
@@ -200,14 +195,12 @@ object NearbyConnectionsManager {
             messageType = type,
             messageContent = content,
         )
-        val payloadBytes = message.toByteArray()
         seenMessageIds[message.messageId] = System.currentTimeMillis()
-        Log.i(TAG, "Broadcasting ${payloadBytes.size} bytes with uid ${message.messageId}")
-
-        connectionsClient.sendPayload(
-            EndpointRegistry.getDirectlyConnectedEndpoints().map { it.id }.toList(),
-            Payload.fromBytes(payloadBytes)
+        Log.i(
+            TAG,
+            "Broadcasting ${message.toByteArray().size} bytes with uid ${message.messageId}"
         )
+        sendToAll(message)
     }
 
     private val payloadCallback = object : PayloadCallback() {
@@ -229,61 +222,59 @@ object NearbyConnectionsManager {
                     "Received message from $endpointId with uid ${receivedMessage.messageId}."
                 )
 
-                if (receivedMessage.messageType == NetworkMessage.Companion.Types.GOSSIP) {
-                    try {
-                        val gossip = Json.decodeFromString(
-                            Gossip.serializer(),
-                            receivedMessage.messageContent!!
-                        )
-                        Log.d(
-                            TAG,
-                            "Received gossip from ${receivedMessage.sendingNodeId} via $endpointId with peers: ${gossip.peers}"
-                        )
+                when (receivedMessage.messageType) {
+                    NetworkMessage.Companion.Types.GOSSIP -> {
+                        try {
+                            val gossip = Json.decodeFromString(
+                                Gossip.serializer(),
+                                receivedMessage.messageContent!!
+                            )
+                            Log.d(
+                                TAG,
+                                "Received gossip from ${receivedMessage.sendingNodeId} via $endpointId with peers: ${gossip.peers}"
+                            )
 
-                        val originalSenderEndpoint =
-                            EndpointRegistry.get(receivedMessage.sendingNodeId)
-                        originalSenderEndpoint.immediatePeerIds = gossip.peers
+                            val originalSenderEndpoint =
+                                EndpointRegistry.get(receivedMessage.sendingNodeId)
+                            originalSenderEndpoint.immediatePeerIds = gossip.peers
 
-                        val originalSenderDistance = originalSenderEndpoint.distance
-                        if (originalSenderDistance != null) {
-                            val newDistance = originalSenderDistance + 1
-                            gossip.peers.forEach { peerId ->
-                                if (peerId != localId) {
-                                    val endpoint = EndpointRegistry.get(peerId)
-                                    if ((endpoint.distance ?: Int.MAX_VALUE) > newDistance) {
-                                        endpoint.distance = newDistance
+                            val originalSenderDistance = originalSenderEndpoint.distance
+                            if (originalSenderDistance != null) {
+                                val newDistance = originalSenderDistance + 1
+                                gossip.peers.forEach { peerId ->
+                                    if (peerId != localId) {
+                                        val endpoint = EndpointRegistry.get(peerId)
+                                        if ((endpoint.distance ?: Int.MAX_VALUE) > newDistance) {
+                                            endpoint.distance = newDistance
+                                        }
                                     }
                                 }
+                            } else {
+                                Log.w(
+                                    TAG,
+                                    "Received gossip from endpoint ${receivedMessage.sendingNodeId} with unknown distance, cannot process."
+                                )
                             }
-                        } else {
-                            Log.w(
-                                TAG,
-                                "Received gossip from endpoint ${receivedMessage.sendingNodeId} with unknown distance, cannot process."
-                            )
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to parse gossip message", e)
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to parse gossip message", e)
                     }
-                } else if (receivedMessage.messageType == NetworkMessage.Companion.Types.DISPLAY) {
-                    if (receivedMessage.sendingNodeId != localId) {
-                        Log.i(
-                            TAG,
-                            "Received display command from ${receivedMessage.sendingNodeId} to display ${receivedMessage.messageContent}"
-                        )
-                        WebAppActivity.navigateTo(receivedMessage.messageContent!!)
-                    }
-                    // Re-broadcast to other connected endpoints
-                    val otherEndpoints =
-                        EndpointRegistry.getDirectlyConnectedEndpoints().filter { it.id != endpointId }
-                    if (otherEndpoints.isNotEmpty()) {
-                        val messageToRebroadcast =
-                            receivedMessage.copy(hopCount = receivedMessage.hopCount + 1)
-                        connectionsClient.sendPayload(
-                            otherEndpoints.map { it.id },
-                            Payload.fromBytes(messageToRebroadcast.toByteArray())
-                        )
+
+                    NetworkMessage.Companion.Types.DISPLAY -> {
+                        if (receivedMessage.sendingNodeId != localId) {
+                            Log.i(
+                                TAG,
+                                "Received display command from ${receivedMessage.sendingNodeId} to display ${receivedMessage.messageContent}"
+                            )
+                            WebAppActivity.navigateTo(receivedMessage.messageContent!!)
+                        }
                     }
                 }
+                // Re-broadcast to other connected endpoints
+                sendToAll(
+                    receivedMessage.copy(hopCount = receivedMessage.hopCount + 1),
+                    excludeEndpointId = endpointId
+                )
             } else {
                 Log.w(TAG, "Ignoring non-BYTES payload from $endpointId, type: ${payload.type}")
             }
@@ -341,6 +332,30 @@ object NearbyConnectionsManager {
     private fun disconnectFromEndpoint(endpointId: String) {
         Log.i(TAG, "Choosing to disconnect from $endpointId")
         connectionsClient.disconnectFromEndpoint(endpointId)
+    }
+
+    /**
+     * Helper to send a message to all connected endpoints, with an optional exclusion.
+     * @param message The message to send.
+     * @param excludeEndpointId Optional endpoint ID to exclude from the broadcast.
+     */
+    private fun sendToAll(
+        message: NetworkMessage,
+        excludeEndpointId: String? = null
+    ) {
+        val allEndpointIds = EndpointRegistry.getDirectlyConnectedEndpoints().map { it.id }
+        val recipientEndpointIds = if (excludeEndpointId != null) {
+            allEndpointIds.filter { it != excludeEndpointId }
+        } else {
+            allEndpointIds
+        }
+
+        if (recipientEndpointIds.isNotEmpty()) {
+            connectionsClient.sendPayload(
+                recipientEndpointIds,
+                Payload.fromBytes(message.toByteArray())
+            )
+        }
     }
 
     private val endpointDiscoveryCallback = object : EndpointDiscoveryCallback() {
