@@ -48,18 +48,21 @@ This document outlines the shortest path to a functional mesh network.
 
 ## Step 4: NearbyConnectionsManager.broadcast and NetworkMessage.DISPLAY
 
-* **Goal:** Implement the "Render Locally" button to work: if checked like it is now continue to
-  show the visualization on the same device, but if unchecked, show the visualization on ALL other
-  devices.
-
-The UI has a checkbox "Render Locally"
-If the checkbox is checked, do the current app/src/main/assets/main.js
-`window.location.href = folder + '/index.html'` that renders the chosen display locally.
-Otherwise, call the commented out JavaScriptInjectedAndroid.sendPeerDisplayCommand
-Which should use the
-to send a NearbyConnectionsManager.broadcast with NetworkMessage.DISPLAY command, and content = the
-folder to display.
-the other nodes see that message, and all the other nodes (except for the original) all display the
-chosen vis.
-e.g. If on one device I uncheck "render locally" then click "disco" then ALL the other devices
-should show /disco/index.html
+*   **Goal:** Implement the "Render Locally" button to work: if checked like it is now continue to
+    show the visualization on the same device, but if unchecked, show the visualization on ALL other
+    devices.
+*   **Mechanism:**
+    - [x] The UI has a checkbox "Render Locally".
+    - [x] If the checkbox is checked, clicking a visualization navigates the local `WebView` to the
+      content's `index.html`.
+    - [x] If the checkbox is *unchecked*, the click event calls the
+      `JavaScriptInjectedAndroid.sendPeerDisplayCommand` function.
+    - [x] This Kotlin function constructs a `NetworkMessage` of type `DISPLAY` with the chosen
+      folder as content.
+    - [x] It then calls `NearbyConnectionsManager.broadcast` to send this message to all directly
+      connected peers.
+    - [x] The `payloadCallback` in `NearbyConnectionsManager` handles incoming `DISPLAY` messages.
+    - [x] If the message is from another node, it calls `WebAppActivity.navigateTo` to load the
+      content in the local `WebView`.
+    - [x] After processing, the message is re-broadcast to all other peers to ensure it floods the
+      network.
