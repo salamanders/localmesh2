@@ -5,7 +5,7 @@ the subsequent triggering of a network-wide UI change.
 
 ## Phase 1: New Node Joins the Network
 
-**Start Situation:** There are 7 nodes (Node1-Node7) fully connected to each other in a mesh
+**Start State:** There are 7 nodes (Node1-Node7) fully connected to each other in a mesh
 network. Each node has 6 active connections.
 
 **End State:** `NewNode` is integrated into the network, and the overall network topology has been
