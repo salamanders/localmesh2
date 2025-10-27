@@ -1,120 +1,89 @@
 # P2P Network Flow Documentation
 
-This document outlines the step-by-step process of a new node joining an existing mesh network and
-the subsequent triggering of a network-wide UI change.
+This document outlines the step-by-step process of a new node joining a fully connected mesh network, the subsequent gossip synchronization, and the triggering of a network-wide UI change.
 
-## Phase 1: New Node Joins the Network
+## Phase 1: New node joins an already full network
 
-**Start State:** There are 7 nodes (Node1-Node7) fully connected to each other in a mesh
-network. Each node has 6 active connections.
+**Start State:** There are 8 nodes (Node1-Node8) fully connected to each other in a mesh network. Each node has 7 active connections, which is its maximum capacity.
 
-**End State:** `NewNode` is integrated into the network, and the overall network topology has been
-optimized.
+**End State:** `NewNode` is integrated into the network, and the overall network topology has been optimized.
 
 ---
 
-1. **Initial State:** 7 nodes (Node1-Node7) are fully connected. Each node maintains 6 direct
-   connections.
+1. **Initial State:** 8 nodes (Node1-Node8) are fully connected. Each node maintains 7 direct connections, meaning its connection slots are full.
 
-2. **NewNode Startup:** A new node, `NewNode`, starts the application. The
-   `NearbyConnectionsManager` is initialized. `NewNode` begins advertising its presence and
-   simultaneously discovering other nodes in the vicinity.
+2. **NewNode Startup:** A new node, `NewNode`, starts the application. The `NearbyConnectionsManager` is initialized. `NewNode` begins advertising its presence and simultaneously discovering other nodes in the vicinity.
 
-3. **First Discovery:** `NewNode`'s discovery callback is triggered when it finds `Node1`. Since
-   `NewNode` has no connections, the distance to `Node1` is considered infinite. The condition to
-   initiate a connection (`distance > 2`) is met.
+3. **First Discovery:** `NewNode`'s discovery callback is triggered when it finds `Node1`. Since `NewNode` has no connections, the distance to `Node1` is considered infinite. The condition to initiate a connection (`distance > 2`) is met.
 
-4. **Connection Request:** `NewNode` sends a connection request to `Node1`.
+4. **Connection Request to a Full Node:** `NewNode` sends a connection request to `Node1`.
 
-5. **Connection Acceptance:** `Node1` receives the request. It currently has 6 connections, which is
-   below its hardware limit of 7. Therefore, `Node1` accepts the connection from `NewNode`.
+5. **`findRedundantPeer` Triggered:** `Node1` receives the request but already has 7 connections (its limit). Instead of rejecting the connection, it invokes the `findRedundantPeer()` function to make room. It examines its directly connected peers and finds that they are all at a distance of 1. It will select one of them to disconnect from. For this example, we'll assume it chooses to disconnect from `Node8`.
 
-6. **Connection Established:** A direct connection is formed between `NewNode` and `Node1`. The
-   `EndpointRegistry` on both nodes is updated to set their distance to each other as 1. `NewNode`
-   now has 1 connection, and `Node1` has 7.
+6. **Connection Shift:**
+   * `Node1` disconnects from `Node8`. `Node1`'s connection count drops to 6; `Node8`'s also drops to 6.
+   * `Node1` accepts the incoming connection from `NewNode`. `Node1`'s connection count returns to 7; `NewNode`'s is now 1.
 
-7. **Initial Gossip Exchange:** Within 10 seconds, `NewNode` and `Node1` exchange gossip messages.
-    * `NewNode` informs `Node1` about its single peer (`Node1`).
-    * `Node1` informs `NewNode` about its 7 peers (`Node2` through `Node7`, and `NewNode`).
+7. **Concurrent Connection Attempts & Race Condition:**
+   * While the connection to `Node1` was being established, `NewNode` continued discovering other nodes. It may attempt to connect to `Node2` and `Node3` simultaneously.
+   * `Node2` and `Node3` will undergo the same `findRedundantPeer` process. This introduces a potential race condition. For example, `Node2` might decide to drop its connection to `Node1` at the same time `Node1` is dropping its connection to `Node8`. This documentation highlights this as a potential area for further investigation to ensure network stability.
 
-8. **Registry Update on NewNode:** `NewNode` processes the gossip from `Node1`. It learns about
-   `Node2` through `Node7` for the first time and registers them with a distance of 2 (since they
-   are 1 hop away from `Node1`).
+8. **Network State after Initial Connections:**
+   * `NewNode`: Connected to `Node1`, `Node2`, and `Node3`. (3 connections)
+   * `Node1`, `Node2`, `Node3`: Each has dropped one of their original peers to connect to `NewNode`. (7 connections each)
+   * The nodes that were dropped (e.g., `Node8`) now have fewer connections and will use their own `reshuffle()` logic to find and connect to `NewNode`, further integrating it into the mesh.
 
-9. **Concurrent Connections:** While the connection to `Node1` was being established, `NewNode`
-   continued discovering other nodes. It proceeds to connect to `Node2` and `Node3` in a similar
-   fashion. For the purpose of this flow, we'll assume it establishes these three initial
-   connections.
+## Phase 2: Gossip messages reach a steady state
 
-10. **Network State after Initial Connections:**
-    * `NewNode`: Connected to `Node1`, `Node2`, `Node3`. (3 connections)
-    * `Node1`, `Node2`, `Node3`: Each connected to the original 6 nodes plus `NewNode`. (7
-      connections each)
-    * `Node4`, `Node5`, `Node6`, `Node7`: Remain connected to the original 6 nodes. (6 connections
-      each)
-    * Through gossip, `Node4-7` learn about `NewNode` at a distance of 2.
+**Start State:** `NewNode` has established its initial connections (to `Node1`, `Node2`, `Node3`) into the mesh. The network topology is temporarily unstable due to the recent connection shifts.
 
-11. **Network Reshuffling (`Node4`'s Turn):** The `reshuffle()` function runs periodically on all
-    nodes to optimize the network topology. After about 30 seconds, `Node4` runs this logic:
-    * **`findWorstDistantNode()`**: `Node4` checks its registry of known endpoints. `NewNode` is
-      known with a distance of 2. Assuming all other nodes are at distance 1, `NewNode` is selected
-      as the "worst distant node" to connect to.
-    * **`findRedundantPeer()`**: `Node4` examines its direct peers. `Node1`, `Node2`, and `Node3`
-      each have 7 connections, while `Node5`, `Node6`, and `Node7` have 6. `Node4` will choose the
-      peer with the most connections as redundant, in this case, `Node1`.
-    * **Decision:** `Node4` decides to improve network topology. It disconnects from the redundant
-      peer (`Node1`) and initiates a connection with the worst distant node (`NewNode`).
-
-12. **Connection Shift:**
-    * `Node4` disconnects from `Node1`. `Node4`'s connection count drops to 5; `Node1`'s drops to 6.
-    * `Node4` connects to `NewNode`. `Node4`'s connection count is now 6; `NewNode`'s is now 4.
-
-13. **Continuing Optimization:** This reshuffling process continues across the entire network. Nodes
-    with a high number of connections will gradually shed them in favor of connecting to more
-    distant nodes. This balances the connection load, reduces the average distance between any two
-    nodes, and ensures `NewNode` becomes a well-integrated member of the mesh.
-
-## Phase 2: "Disco" Visualization
-
-**Start Situation:** `NewNode` is connected and integrated into the mesh.
-
-**End State:** `NewNode` is showing the "disco" visualization.
+**End State:** All nodes in the network have a complete and accurate map of the network topology in their respective `EndpointRegistry`.
 
 ---
 
-14. **User Action:** A user on `Node1` opens the Web UI. The UI lists available visualizations,
-    including "disco". The user clicks "disco" after ensuring the "Render Locally" checkbox is
-    *unchecked*.
+9.  **Initial Gossip Exchange:** Within 10 seconds of connecting, `NewNode` and its direct peers (`Node1`, `Node2`, `Node3`) begin exchanging gossip messages.
+    *   `NewNode` informs its peers about its own connections.
+    *   `Node1`, `Node2`, and `Node3` each send their full list of peers to `NewNode`.
 
-15. **JavaScript Interface Call:** The `main.js` script running on `Node1`'s device executes
-    `Android.sendPeerDisplayCommand("disco")`.
+10. **Registry Update on `NewNode`:** `NewNode` processes the gossip from its peers.
+    *   It learns about `Node4` through `Node8` for the first time.
+    *   It registers these new nodes with a distance of 2 (since they are 1 hop away from its direct connections).
+    *   Its `EndpointRegistry` now contains all 9 nodes in the network.
 
-16. **Broadcast Initiated:** The `JavaScriptInjectedAndroid` class on `Node1` receives this call. It
-    constructs a `NetworkMessage` of type `DISPLAY` with the content "disco" and passes it to the
-    `NearbyConnectionsManager` to be broadcast.
+11. **Registry Update on the Main Network:**
+    *   `Node1`, `Node2`, and `Node3` update their registries to show `NewNode` at a distance of 1.
+    *   Through subsequent gossip exchanges, this information propagates. For instance, when `Node1` gossips with `Node4`, `Node4` learns about `NewNode` and registers it at a distance of 2.
 
-17. **Message Flooding:** `Node1` sends this message to all of its direct peers (e.g., `NewNode`,
-    `Node2`, etc.).
-    * The message contains a unique ID, which is immediately stored in the `seenMessageIds` map on
-      `Node1` to prevent processing duplicate messages.
+12. **Reaching a Steady State:** After a few cycles of the periodic gossip exchange (typically within 30-60 seconds), the information about `NewNode` and the other connection changes will have propagated throughout the entire network. At this point, every node has a complete and consistent view of the 9-node network topology. This stable state is crucial for the `reshuffle()` logic on each node to make informed decisions about optimizing connections.
 
-18. **First Hop Reception (`NewNode`):**
-    * `NewNode` receives the `DISPLAY` message from `Node1`.
-    * It checks the message ID against its `seenMessageIds` map. The ID is new, so it proceeds.
-    * The `payloadCallback` identifies the message type as `DISPLAY` and calls
-      `WebAppActivity.navigateTo("disco")`.
-    * The `WebAppActivity` on `NewNode` receives this command and, executing on the main UI thread,
-      updates the `FullScreenWebView`'s URL to `file:///android_asset/disco/index.html`.
-    * **End State Reached:** `NewNode` is now displaying the "disco" visualization.
+## Phase 3: User-initiated Display Command
 
-19. **Message Re-broadcast:**
-    * After processing the message, `NewNode` re-broadcasts the *exact same message* to all of its
-      peers except for `Node1` (the node it received the message from). The message's hop count is
-      incremented.
+**Start Situation:** `NewNode` is fully connected and integrated into the 9-node mesh. All nodes have a stable view of the network topology.
 
-20. **Subsequent Hops & Loop Prevention:**
-    * Other nodes (like `Node2`) also receive, process, and re-broadcast the message.
-    * If a node receives a message with an ID that is already in its `seenMessageIds` map, it
-      ignores the message completely, preventing infinite loops.
-    * This flooding mechanism ensures the command propagates rapidly and efficiently throughout the
-      entire mesh network.
+**End State:** All 9 nodes in the network are showing the "disco" visualization.
+
+---
+
+13. **User Action:** A user on `Node1` opens the Web UI. The UI lists available visualizations, including "disco". The user clicks "disco" after ensuring the "Render Locally" checkbox is *unchecked*.
+
+14. **JavaScript Interface Call:** The `main.js` script running on `Node1`'s device executes `Android.sendPeerDisplayCommand("disco")`.
+
+15. **Broadcast Initiated:** The `JavaScriptInjectedAndroid` class on `Node1` receives this call. It constructs a `NetworkMessage` of type `DISPLAY` with the content "disco" and passes it to the `NearbyConnectionsManager` to be broadcast.
+
+16. **Message Flooding:** `Node1` sends this message to all of its direct peers (e.g., `NewNode`, `Node2`, etc.).
+    * The message contains a unique ID, which is immediately stored in the `seenMessageIds` map on `Node1` to prevent processing duplicate messages.
+
+17. **First Hop Reception (`NewNode`):**
+    * `NewNode` receives the `DISPLAY` message from `Node1`. The `onPayloadReceived` callback in `NearbyConnectionsManager` is triggered.
+    * Inside this callback, the code checks the message ID against its `seenMessageIds` map. The ID is new, so it proceeds.
+    * The payload is parsed, the message type is identified as `DISPLAY`, and the `WebAppActivity.navigateTo("disco")` function is called.
+    * The `WebAppActivity` on `NewNode` receives this command and, executing on the main UI thread, updates the `FullScreenWebView`'s URL to `file:///android_asset/disco/index.html`.
+    * **End State Reached for one node:** `NewNode` is now displaying the "disco" visualization.
+
+18. **Message Re-broadcast:**
+    * After processing the message, `NewNode` re-broadcasts the *exact same message* to all of its peers except for `Node1` (the node it received the message from).
+
+19. **Subsequent Hops & Loop Prevention:**
+    * Other nodes (like `Node2`, `Node4`, etc.) also receive, process, and re-broadcast the message in the same manner.
+    * If a node receives a message with an ID that is already in its `seenMessageIds` map, it ignores the message completely, preventing infinite loops.
+    * This flooding mechanism ensures the command propagates rapidly and efficiently throughout the entire 9-node mesh network until all nodes are displaying the visualization. The `onPayloadTransferUpdate` is used to monitor the progress of the byte transfer for the payload, but the core logic for acting on the message resides in `onPayloadReceived`.
