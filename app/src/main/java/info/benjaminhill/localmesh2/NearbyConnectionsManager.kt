@@ -225,14 +225,19 @@ object NearbyConnectionsManager {
                         val senderEndpoint = EndpointRegistry.get(endpointId)
                         senderEndpoint.immediateConnections = gossip.peers.size
 
-                        val newDistance = receivedMessage.hopCount + 1
-                        gossip.peers.forEach { peerId ->
-                            if (peerId != localId) {
-                                val endpoint = EndpointRegistry.get(peerId)
-                                if ((endpoint.distance ?: Int.MAX_VALUE) > newDistance) {
-                                    endpoint.distance = newDistance
+                        val senderDistance = senderEndpoint.distance
+                        if (senderDistance != null) {
+                            val newDistance = senderDistance + 1
+                            gossip.peers.forEach { peerId ->
+                                if (peerId != localId) {
+                                    val endpoint = EndpointRegistry.get(peerId)
+                                    if ((endpoint.distance ?: Int.MAX_VALUE) > newDistance) {
+                                        endpoint.distance = newDistance
+                                    }
                                 }
                             }
+                        } else {
+                            Log.w(TAG, "Received gossip from endpoint $endpointId with unknown distance, cannot process.")
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to parse gossip message", e)
@@ -344,11 +349,16 @@ object NearbyConnectionsManager {
                 val endpoint = EndpointRegistry.get(endpointId)
                 Log.d(TAG, "onConnectionInitiated from ${endpoint.id}")
                 if (EndpointRegistry.getDirectlyConnectedEndpoints().size >= MAX_CONNECTIONS_HARDWARE_LIMIT) {
-                    Log.i(
-                        TAG,
-                        "Rejecting connection from $endpointId, already at max connections (7+)."
-                    )
-                    connectionsClient.rejectConnection(endpointId)
+                    Log.w(TAG, "At connection limit. Finding a redundant peer to make room for $endpointId.")
+                    val redundantPeer = findRedundantPeer()
+                    if (redundantPeer != null) {
+                        Log.i(TAG, "Making room for $endpointId by disconnecting from redundant peer ${redundantPeer.id}")
+                        disconnectFromEndpoint(redundantPeer.id)
+                        connectionsClient.acceptConnection(endpointId, payloadCallback)
+                    } else {
+                        Log.e(TAG, "At connection limit but couldn't find a redundant peer. Rejecting $endpointId.")
+                        connectionsClient.rejectConnection(endpointId)
+                    }
                     return
                 }
                 Log.d(TAG, "Accepting connection from $endpointId")
