@@ -19,7 +19,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.minutes
 
@@ -126,18 +125,12 @@ object NearbyConnectionsManager {
         if (connectedEndpoints.isEmpty()) {
             return
         }
-        val gossip = Gossip(connectedEndpoints.map { it.id }.toSet())
         val message = NetworkMessage(
             sendingNodeId = localId,
             messageType = NetworkMessage.Companion.Types.GOSSIP,
-            messageContent = Json.encodeToString(Gossip.serializer(), gossip),
+            peers = connectedEndpoints.map { it.id }.toSet(),
         )
-        seenMessageIds[message.messageId] = System.currentTimeMillis()
-        Log.i(
-            TAG,
-            "Broadcasting gossip ${message.toByteArray().size} bytes with uid ${message.messageId} to ${connectedEndpoints.map { it.id }}"
-        )
-        sendToAll(message)
+        broadcastInternal(message)
     }
 
 
@@ -189,12 +182,16 @@ object NearbyConnectionsManager {
             .maxByOrNull { it.distance ?: Int.MAX_VALUE }
     }
 
-    fun broadcast(type: NetworkMessage.Companion.Types, content: String) {
+    fun broadcastDisplayMessage(displayTarget: String) {
         val message = NetworkMessage(
             sendingNodeId = localId,
-            messageType = type,
-            messageContent = content,
+            messageType = NetworkMessage.Companion.Types.DISPLAY,
+            displayTarget = displayTarget,
         )
+        broadcastInternal(message)
+    }
+
+    private fun broadcastInternal(message: NetworkMessage) {
         seenMessageIds[message.messageId] = System.currentTimeMillis()
         Log.i(
             TAG,
@@ -224,39 +221,36 @@ object NearbyConnectionsManager {
 
                 when (receivedMessage.messageType) {
                     NetworkMessage.Companion.Types.GOSSIP -> {
-                        try {
-                            val gossip = Json.decodeFromString(
-                                Gossip.serializer(),
-                                receivedMessage.messageContent!!
-                            )
-                            Log.d(
-                                TAG,
-                                "Received gossip from ${receivedMessage.sendingNodeId} via $endpointId with peers: ${gossip.peers}"
-                            )
+                        val peers = receivedMessage.peers
+                        if (peers == null) {
+                            Log.w(TAG, "Received gossip message with no peers")
+                            return
+                        }
+                        Log.d(
+                            TAG,
+                            "Received gossip from ${receivedMessage.sendingNodeId} via $endpointId with peers: $peers"
+                        )
 
-                            val originalSenderEndpoint =
-                                EndpointRegistry.get(receivedMessage.sendingNodeId)
-                            originalSenderEndpoint.immediatePeerIds = gossip.peers
+                        val originalSenderEndpoint =
+                            EndpointRegistry.get(receivedMessage.sendingNodeId)
+                        originalSenderEndpoint.immediatePeerIds = peers
 
-                            val originalSenderDistance = originalSenderEndpoint.distance
-                            if (originalSenderDistance != null) {
-                                val newDistance = originalSenderDistance + 1
-                                gossip.peers.forEach { peerId ->
-                                    if (peerId != localId) {
-                                        val endpoint = EndpointRegistry.get(peerId)
-                                        if ((endpoint.distance ?: Int.MAX_VALUE) > newDistance) {
-                                            endpoint.distance = newDistance
-                                        }
+                        val originalSenderDistance = originalSenderEndpoint.distance
+                        if (originalSenderDistance != null) {
+                            val newDistance = originalSenderDistance + 1
+                            peers.forEach { peerId ->
+                                if (peerId != localId) {
+                                    val endpoint = EndpointRegistry.get(peerId)
+                                    if ((endpoint.distance ?: Int.MAX_VALUE) > newDistance) {
+                                        endpoint.distance = newDistance
                                     }
                                 }
-                            } else {
-                                Log.w(
-                                    TAG,
-                                    "Received gossip from endpoint ${receivedMessage.sendingNodeId} with unknown distance, cannot process."
-                                )
                             }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Failed to parse gossip message", e)
+                        } else {
+                            Log.w(
+                                TAG,
+                                "Received gossip from endpoint ${receivedMessage.sendingNodeId} with unknown distance, cannot process."
+                            )
                         }
                     }
 
@@ -264,9 +258,9 @@ object NearbyConnectionsManager {
                         if (receivedMessage.sendingNodeId != localId) {
                             Log.i(
                                 TAG,
-                                "Received display command from ${receivedMessage.sendingNodeId} to display ${receivedMessage.messageContent}"
+                                "Received display command from ${receivedMessage.sendingNodeId} to display ${receivedMessage.displayTarget}"
                             )
-                            WebAppActivity.navigateTo(receivedMessage.messageContent!!)
+                            WebAppActivity.navigateTo(receivedMessage.displayTarget!!)
                         }
                     }
                 }
