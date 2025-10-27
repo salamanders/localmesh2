@@ -65,7 +65,7 @@ Each device will maintain its state, which includes:
 - In the `onConnectionInitiated` callback, a device will check if it has less than
   `MAX_CONNECTIONS`.
 - If it has less than `MAX_CONNECTIONS`, it will accept the incoming connection.
-- If it already has `MAX_CONNECTIONS`, it will reject the incoming connection. (See
+- If it already has `MAX_CONNECTIONS`, it will attempt to make room by invoking `findRedundantPeer()` to disconnect from a peer that is safely reachable via a 2-hop path. If successful, it will accept the new connection; otherwise it will be rejected. (See
   `connectionLifecycleCallback` in [
   `NearbyConnectionsManager.kt`](../app/src/main/java/info/benjaminhill/localmesh2/NearbyConnectionsManager.kt))
 

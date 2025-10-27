@@ -33,10 +33,7 @@ This document outlines the shortest path to a functional mesh network.
     - [x]   Uncomment the `disconnectFromEndpoint` function in `NearbyConnectionsManager`.
     - [x]   Create a new function, maybe `findRedundantPeer()`, that analyzes the
       `EndpointRegistry`.
-    - [x] This function should identify a peer that is "redundant". A peer is redundant if you have
-      more than a minimum number of connections, and the candidate for disconnection is the peer
-      that itself has the most connections. This information would be available from the gossip
-      messages.
+    - This function should identify a peer that is "redundant". A peer is redundant if it is safely reachable through other 2-hop paths. The algorithm calculates a "redundancy score" for each peer and drops the one with the highest score, ensuring network stability.
     - [x]   Create another function, `findWorstDistantNode()`, that finds a node with a "bad"
       distance (e.g., > 2 or unknown) and that has been heard from in the last 5 minutes. This will
       be the trigger for a reshuffle and avoids trying to connect to offline "zombie" nodes.

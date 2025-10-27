@@ -320,10 +320,10 @@ The `docs/TODOs.md` file contained a commented-out implementation of a `Topology
 *   **Concept:** The original `shouldConnectTo` function in `TopologyOptimizer` considered the connection count of the remote endpoint when deciding whether to connect. This information would have been encoded in the endpoint name.
 *   **Value:** This would allow the node to make more intelligent connection decisions, for example, by prioritizing connections to nodes with fewer peers. This would help to build a more balanced and robust network topology.
 
-## 2. Safe Disconnection Logic
+## 2. Safe Disconnection Logic (Implemented)
 
-*   **Concept:** A `TODO` in the `TopologyOptimizer` mentioned: `Pick a peer that if you disconnect will still reach you through another route`.
-*   **Value:** This is a critical feature for maintaining network integrity. Before disconnecting from a peer, the node should verify that it will not be partitioned from the rest of the network. This could be achieved by checking if its remaining peers have connections to each other or to other parts of the mesh.
+*   **Concept:** A peer should only be dropped if it remains reachable through a 2-hop path.
+*   **Implementation:** The `findRedundantPeer` function now calculates a "redundancy score" for each direct peer. The score is the number of other peers that also provide a path to the candidate peer. The peer with the highest score is chosen to be dropped. This ensures network connectivity is maintained when making room for new nodes.
 
 ## 3. Proactive Churn for Network Discovery
 

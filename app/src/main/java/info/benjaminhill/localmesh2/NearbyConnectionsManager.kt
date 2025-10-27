@@ -161,11 +161,25 @@ object NearbyConnectionsManager {
     }
 
     private fun findRedundantPeer(): Endpoint? {
-        val connectedPeers = EndpointRegistry.getDirectlyConnectedEndpoints()
-        if (connectedPeers.size < 3) {
+        val immediatePeers = EndpointRegistry.getDirectlyConnectedEndpoints()
+        if (immediatePeers.size < 3) {
             return null
         }
-        return connectedPeers.maxByOrNull { it.immediateConnections ?: 0 }
+
+        // Calculate redundancy scores for each peer
+        val redundancyScores = immediatePeers.associateWith { peerToScore ->
+            immediatePeers
+                .filter { it != peerToScore }
+                .count { otherPeer ->
+                    otherPeer.immediatePeerIds?.contains(peerToScore.id) ?: false
+                }
+        }
+
+        // Find the peer with the highest score, using immediateConnections as a tie-breaker
+        return immediatePeers.maxWithOrNull(compareBy(
+            { redundancyScores[it] ?: 0 }, // Primary criteria: redundancy score
+            { it.immediateConnections ?: 0 }  // Secondary criteria: connection count
+        ))
     }
 
     private fun findWorstDistantNode(): Endpoint? {
@@ -223,7 +237,7 @@ object NearbyConnectionsManager {
                         Log.d(TAG, "Received gossip from $endpointId with peers: ${gossip.peers}")
 
                         val senderEndpoint = EndpointRegistry.get(endpointId)
-                        senderEndpoint.immediateConnections = gossip.peers.size
+                        senderEndpoint.immediatePeerIds = gossip.peers
 
                         val senderDistance = senderEndpoint.distance
                         if (senderDistance != null) {

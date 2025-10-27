@@ -15,7 +15,6 @@ object EndpointRegistry {
                 id = endpointId,
                 lastUpdatedTs = System.currentTimeMillis(),
                 distance = null,
-                immediateConnections = null,
             ).also {
                 if (autoUpdateTs)
                     it.lastUpdatedTs = System.currentTimeMillis()
