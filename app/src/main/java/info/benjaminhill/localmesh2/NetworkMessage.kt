@@ -5,6 +5,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.cbor.Cbor
 import java.util.UUID
 
+@Serializable
+data class Gossip(val peers: Set<String>)
+
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class NetworkMessage(

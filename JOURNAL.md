@@ -153,7 +153,6 @@ if it implements a similar feature:
   testing of complex, emergent network behavior can be flaky. Manual testing on real devices remains
   the most reliable way to verify topology optimization logic.
 
-
 # Refactor: Separate Topology Optimizer from Connection Management
 
 ## Goals
@@ -168,21 +167,23 @@ if it implements a similar feature:
 We will split the existing `NearbyConnectionsManager` into two distinct classes:
 
 1. **`NearbyConnectionsManager` (Refactored):**
-  - This class will be responsible *only* for the direct interactions with the
-    `com.google.android.gms.nearby.connection` API.
-  - It will manage the connection lifecycle, advertising, discovery, and payload transfers.
-  - It will hold a reference to a `TopologyOptimizer` and will consult it when making decisions.
-  - It will not contain any logic specific to the "snake" topology (e.g., reshuffling, connection
-    count rules).
+
+- This class will be responsible *only* for the direct interactions with the
+  `com.google.android.gms.nearby.connection` API.
+- It will manage the connection lifecycle, advertising, discovery, and payload transfers.
+- It will hold a reference to a `TopologyOptimizer` and will consult it when making decisions.
+- It will not contain any logic specific to the "snake" topology (e.g., reshuffling, connection
+  count rules).
 
 2. **`TopologyOptimizer` (New Class):**
-  - This class will contain all the high-level logic for maintaining the desired mesh topology.
-  - It will be responsible for the "reshuffling" logic.
-  - It will provide decision-making methods like
-    `shouldConnectTo(endpointId, theirConnectionCount)` and `selectEndpointToDisconnect()`.
-  - **Crucially, this class will have no `import` statements
-    from `com.google.android.gms.nearby.connection`.** It will work with pure data types (Strings,
-    Ints, Maps).
+
+- This class will contain all the high-level logic for maintaining the desired mesh topology.
+- It will be responsible for the "reshuffling" logic.
+- It will provide decision-making methods like
+  `shouldConnectTo(endpointId, theirConnectionCount)` and `selectEndpointToDisconnect()`.
+- **Crucially, this class will have no `import` statements
+  from `com.google.android.gms.nearby.connection`.** It will work with pure data types (Strings,
+  Ints, Maps).
 
 ## List of Changes
 
@@ -201,8 +202,6 @@ We will split the existing `NearbyConnectionsManager` into two distinct classes:
   `TopologyOptimizer`.
 - [x] Verify the refactoring by building the project.
 - [ ] Delete `REFACTOR_TOPOLOGY_OPTIMIZER.md`.
-
-
 
 ### FUTURE: Enhancing the Gossip Protocol
 
@@ -236,8 +235,6 @@ This would allow the "Check, Process, Forward" logic to seamlessly handle differ
 making it possible to add features like file sharing and a mesh-wide API without ambiguity. The
 receiver would simply check which field is not null to know how to process the payload.
 
-
-
 ### FUTURE: Potential Architectural Improvements
 
 The original `localmesh` project used a more complex architecture that could be beneficial to adopt
@@ -269,14 +266,71 @@ project could be a good starting point:
 
 ## Goal
 
-- To improve the user experience by automatically starting the mesh service as soon as the necessary permissions are granted.
-- To remove the need for the user to manually click an "Authorize Mesh" button after granting permissions.
+- To improve the user experience by automatically starting the mesh service as soon as the necessary
+  permissions are granted.
+- To remove the need for the user to manually click an "Authorize Mesh" button after granting
+  permissions.
 - To make the app launch seamlessly, whether started manually or via a script.
 
 ## Changes
 
 - [x] Modified `MainActivity.kt` to check for all required dangerous permissions upon launch.
-- [x] If all permissions are granted, the app now automatically calls `startMesh()`, bypassing the authorization button.
-- [x] This behavior applies to all app launches, making the manual and scripted launch experiences consistent.
-- [x] Removed the now-redundant `--ez auto_start true` flag from the `deploy_all.sh` deployment script.
-- [x] Verified that the permission checking is comprehensive and covers all requirements for the Nearby Connections API.
+- [x] If all permissions are granted, the app now automatically calls `startMesh()`, bypassing the
+  authorization button.
+- [x] This behavior applies to all app launches, making the manual and scripted launch experiences
+  consistent.
+- [x] Removed the now-redundant `--ez auto_start true` flag from the `deploy_all.sh` deployment
+  script.
+- [x] Verified that the permission checking is comprehensive and covers all requirements for the
+  Nearby Connections API.
+
+# Feature: CBOR Serialization for NetworkMessage
+
+## Goals
+
+- Replace JSON serialization with CBOR for `NetworkMessage` objects.
+- Reduce message size and improve serialization/deserialization performance.
+- Maintain JSON serialization for `JavaScriptInjectedAndroid`.
+
+## Design
+
+- Add the `kotlinx-serialization-cbor` dependency to the project.
+- Update the `NetworkMessage.kt` file to use `kotlinx.serialization.cbor.Cbor` for `toByteArray` and
+  `fromByteArray` methods.
+- No changes to `JavaScriptInjectedAndroid.kt`.
+
+## Checklist
+
+- [X] Create `CBOR.md`
+- [X] Add `kotlinx-serialization-cbor` dependency to `app/build.gradle.kts`.
+- [X] Modify `NetworkMessage.kt` to use `Cbor` instead of `Json`.
+- [X] Verify the change by building the project.
+- [X] Complete pre-commit steps.
+- [X] Submit the change.
+
+
+
+
+# Future Features from `TopologyOptimizer`
+
+The `docs/TODOs.md` file contained a commented-out implementation of a `TopologyOptimizer` object. While the `reshuffle` logic has been implemented directly in `NearbyConnectionsManager` for simplicity, the `TopologyOptimizer` contained several valuable ideas for future improvements.
+
+## 1. Intelligent Connection Decisions
+
+*   **Concept:** The original `shouldConnectTo` function in `TopologyOptimizer` considered the connection count of the remote endpoint when deciding whether to connect. This information would have been encoded in the endpoint name.
+*   **Value:** This would allow the node to make more intelligent connection decisions, for example, by prioritizing connections to nodes with fewer peers. This would help to build a more balanced and robust network topology.
+
+## 2. Safe Disconnection Logic
+
+*   **Concept:** A `TODO` in the `TopologyOptimizer` mentioned: `Pick a peer that if you disconnect will still reach you through another route`.
+*   **Value:** This is a critical feature for maintaining network integrity. Before disconnecting from a peer, the node should verify that it will not be partitioned from the rest of the network. This could be achieved by checking if its remaining peers have connections to each other or to other parts of the mesh.
+
+## 3. Proactive Churn for Network Discovery
+
+*   **Concept:** The `TopologyOptimizer` contained logic to proactively drop a well-connected peer if all of its current peers were also well-connected.
+*   **Value:** This "proactive churn" would help the network to discover new nodes and prevent it from stagnating in a stable but suboptimal topology. This is especially important for discovering new islands.
+
+## 4. Aggressive Reconnection
+
+*   **Concept:** The `onDisconnected` function in `TopologyOptimizer` contained logic to "aggressively reconnect" to a new peer if the number of connections dropped below a minimum threshold.
+*   **Value:** This would ensure that the node always maintains a minimum level of connectivity, making the network more resilient to node failures.

@@ -33,18 +33,19 @@ async function updateStatus() {
         contentFolders.toSorted().forEach(folder => {
             const li = document.createElement('li');
             li.textContent = folder;
-            if(folder == 'camera') {
-                li.addEventListener('click', () => {
-                    Android.sendPeerDisplayCommand('slideshow');
-                    window.location.href = 'camera/index.html';
-                });
-            } else {
-                // li.addEventListener('click', () => Android.sendPeerDisplayCommand(folder));
-                // TODO Just for debugging
-                li.addEventListener('click', () => {
-                    window.location.href = folder + '/index.html'
-                });
-            }
+            li.addEventListener('click', () => {
+                const renderLocally = document.getElementById('renderLocally').checked;
+                if (renderLocally) {
+                    if (folder == 'camera') {
+                        Android.sendPeerDisplayCommand('slideshow');
+                        window.location.href = 'camera/index.html';
+                    } else {
+                        window.location.href = folder + '/index.html';
+                    }
+                } else {
+                    Android.sendPeerDisplayCommand(folder);
+                }
+            });
             foldersList.appendChild(li);
         });
     } catch (e) {

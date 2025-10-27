@@ -6,11 +6,11 @@ This document outlines the shortest path to a functional mesh network.
 
 * **Goal:** Periodically broadcast the node's status to its immediate peers.
 * **Mechanism:**
-    - [ ] In `NearbyConnectionsManager`, create a recurring job that sends a `GOSSIP`
+    - [x] In `NearbyConnectionsManager`, create a recurring job that sends a `GOSSIP`
       `NetworkMessage` to all directly connected peers.
-    - [ ] The `NetworkMessage` content should be a serialized representation of the node's knowledge
+    - [x] The `NetworkMessage` content should be a serialized representation of the node's knowledge
       of the network (e.g., its list of direct peers).
-    - [ ] The `payloadCallback` in `NearbyConnectionsManager` needs to be updated to handle incoming
+    - [x] The `payloadCallback` in `NearbyConnectionsManager` needs to be updated to handle incoming
       `GOSSIP` messages.
 
 ## Step 2: Populate the EndpointRegistry
@@ -19,10 +19,10 @@ This document outlines the shortest path to a functional mesh network.
   immediate peers.
 * **Mechanism:** When a `GOSSIP` message is received in `payloadCallback`:
 
-- [ ] Parse the message content to get the sender's peer list.
-- [ ] For each peer in the sender's list, update the `EndpointRegistry`.
-- [ ] If a peer is new, add it to the registry.
-- [ ] Update the `distance` and `lastUpdatedTs` for known endpoints. The distance will be
+- [x] Parse the message content to get the sender's peer list.
+- [x] For each peer in the sender's list, update the `EndpointRegistry`.
+- [x] If a peer is new, add it to the registry.
+- [x] Update the `distance` and `lastUpdatedTs` for known endpoints. The distance will be
   the hop count from the message + 1.
 
 ## Step 3: Implement Intelligent Disconnection
@@ -30,15 +30,37 @@ This document outlines the shortest path to a functional mesh network.
 * **Goal:** Use the network knowledge in `EndpointRegistry` to make smart decisions about who to
   disconnect from.
 * **Mechanism:**
-    - [ ]   Uncomment the `disconnectFromEndpoint` function in `NearbyConnectionsManager`.
-    - [ ]   Create a new function, maybe `findRedundantPeer()`, that analyzes the
+    - [x]   Uncomment the `disconnectFromEndpoint` function in `NearbyConnectionsManager`.
+    - [x]   Create a new function, maybe `findRedundantPeer()`, that analyzes the
       `EndpointRegistry`.
-    - [ ] This function should identify a peer that is "redundant". A peer is redundant if: (You
-      have at least 2 other peers. Your other peers are also connected to the redundant peer.)
-    - [ ]   Create another function, `findWorstDistantNode()`, that finds the node with the highest
-      `distance` (or `null` distance) in the `EndpointRegistry`.
-    - [ ]   Create a recurring job that:
-    - [ ]   Calls `findRedundantPeer()`.
-    - [ ]   If a redundant peer is found, calls `findWorstDistantNode()`.
-    - [ ]  If a "worst" node is found, disconnect from the redundant peer and connect to the worst
+    - [x] This function should identify a peer that is "redundant". A peer is redundant if you have
+      more than a minimum number of connections, and the candidate for disconnection is the peer
+      that itself has the most connections. This information would be available from the gossip
+      messages.
+    - [x]   Create another function, `findWorstDistantNode()`, that finds a node with a "bad"
+      distance (e.g., > 2 or unknown) and that has been heard from in the last 5 minutes. This will
+      be the trigger for a reshuffle and avoids trying to connect to offline "zombie" nodes.
+    - [x]   Create a recurring job that:
+    - [x]   Calls `findWorstDistantNode()` to see if a reshuffle is "worth it".
+    - [x]   If a reshuffle is worth it, calls `findRedundantPeer()`.
+    - [x]   If a redundant peer is found, disconnect from the redundant peer and connect to the
+      worst
       node.
+
+## Step 4: NearbyConnectionsManager.broadcast and NetworkMessage.DISPLAY
+
+* **Goal:** Implement the "Render Locally" button to work: if checked like it is now continue to
+  show the visualization on the same device, but if unchecked, show the visualization on ALL other
+  devices.
+
+The UI has a checkbox "Render Locally"
+If the checkbox is checked, do the current app/src/main/assets/main.js
+`window.location.href = folder + '/index.html'` that renders the chosen display locally.
+Otherwise, call the commented out JavaScriptInjectedAndroid.sendPeerDisplayCommand
+Which should use the
+to send a NearbyConnectionsManager.broadcast with NetworkMessage.DISPLAY command, and content = the
+folder to display.
+the other nodes see that message, and all the other nodes (except for the original) all display the
+chosen vis.
+e.g. If on one device I uncheck "render locally" then click "disco" then ALL the other devices
+should show /disco/index.html

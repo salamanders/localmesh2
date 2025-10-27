@@ -76,6 +76,8 @@ mandatory for all tasks.
 5. **Immediately Verify with Proof:** After every single action, run a command to get positive proof
    of the outcome.
     * After a code change (`write_file`, `replace`): Immediately run the build (`./gradlew build`).
+      Grep the output for "FAILURE" and "BUILD SUCCESSFUL" to avoid polluting the context, and then
+      only read the entire output on failure.
     * After an `adb` command: Immediately run `adb logcat -d -t 1` or a more specific `logcat`
       filter to find affirmative proof that the action succeeded.
     * **Absence of an error is not proof of success.** Only a log message or status confirming the

@@ -19,15 +19,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.minutes
 
 /**
  * Manages all low-level interactions with the Google Nearby Connections API.
  * This class is responsible for advertising, discovering, and managing the lifecycle of connections.
- * It holds a reference to a [TopologyOptimizer] and delegates all strategic decisions
- * (like when to connect, disconnect, or reshuffle) to it, acting as the "muscle" to the
- * optimizer's "brain".
+ * It decides when to connect, disconnect, or reshuffle.
  */
 object NearbyConnectionsManager {
     private const val TAG = "P2P"
@@ -52,6 +51,8 @@ object NearbyConnectionsManager {
     private lateinit var scope: CoroutineScope
     private lateinit var localId: String
     private lateinit var messageCleanupJob: Job
+    private lateinit var gossipJob: Job
+    private lateinit var reshuffleJob: Job
     private lateinit var connectionsClient: ConnectionsClient
     fun initialize(newContext: Context, newScope: CoroutineScope) {
         this.appContext = newContext.applicationContext
@@ -64,6 +65,18 @@ object NearbyConnectionsManager {
                 val now = System.currentTimeMillis()
                 val thirtyMinutesAgo = now - 30.minutes.inWholeMilliseconds
                 seenMessageIds.entries.removeAll { it.value < thirtyMinutesAgo }
+            }
+        }
+        this.gossipJob = this.scope.launch {
+            while (true) {
+                delay(10_000)
+                broadcastGossip()
+            }
+        }
+        this.reshuffleJob = this.scope.launch {
+            while (true) {
+                delay(30_000)
+                reshuffle()
             }
         }
     }
@@ -102,10 +115,70 @@ object NearbyConnectionsManager {
     fun stop() {
         Log.w(TAG, "NearbyConnectionsManager.stop() called.")
         messageCleanupJob.cancel()
+        gossipJob.cancel()
+        reshuffleJob.cancel()
         connectionsClient.stopAllEndpoints()
     }
 
-    // TODO: Broadcasting a message to the network.
+    private fun broadcastGossip() {
+        Log.d(TAG, "Time to gossip")
+        val connectedEndpoints = EndpointRegistry.getDirectlyConnectedEndpoints()
+        if (connectedEndpoints.isEmpty()) {
+            return
+        }
+        val gossip = Gossip(connectedEndpoints.map { it.id }.toSet())
+        val message = NetworkMessage(
+            sendingNodeId = localId,
+            messageType = NetworkMessage.Companion.Types.GOSSIP,
+            messageContent = Json.encodeToString(Gossip.serializer(), gossip),
+        )
+        val payloadBytes = message.toByteArray()
+        seenMessageIds[message.messageId] = System.currentTimeMillis()
+        Log.i(
+            TAG,
+            "Broadcasting gossip ${payloadBytes.size} bytes with uid ${message.messageId} to ${connectedEndpoints.map { it.id }}"
+        )
+
+        connectionsClient.sendPayload(
+            connectedEndpoints.map { it.id },
+            Payload.fromBytes(payloadBytes)
+        )
+    }
+
+
+    private fun reshuffle() {
+        val worstNode = findWorstDistantNode() ?: return
+        val redundantPeer = findRedundantPeer() ?: return
+
+        if (redundantPeer.id != worstNode.id) {
+            Log.i(
+                TAG,
+                "Reshuffling: disconnecting from ${redundantPeer.id} to connect to ${worstNode.id}"
+            )
+            disconnectFromEndpoint(redundantPeer.id)
+            requestConnection(worstNode.id)
+        }
+    }
+
+    private fun findRedundantPeer(): Endpoint? {
+        val connectedPeers = EndpointRegistry.getDirectlyConnectedEndpoints()
+        if (connectedPeers.size < 3) {
+            return null
+        }
+        return connectedPeers.maxByOrNull { it.immediateConnections ?: 0 }
+    }
+
+    private fun findWorstDistantNode(): Endpoint? {
+        val fiveMinutesAgo = System.currentTimeMillis() - 5.minutes.inWholeMilliseconds
+        return EndpointRegistry.getAllKnownEndpoints()
+            .filter { it.lastUpdatedTs > fiveMinutesAgo }
+            .filter {
+                val dist = it.distance
+                dist == null || dist > 2
+            }
+            .maxByOrNull { it.distance ?: Int.MAX_VALUE }
+    }
+
     fun broadcast(type: NetworkMessage.Companion.Types, content: String) {
         val message = NetworkMessage(
             sendingNodeId = localId,
@@ -116,11 +189,10 @@ object NearbyConnectionsManager {
         seenMessageIds[message.messageId] = System.currentTimeMillis()
         Log.i(TAG, "Broadcasting ${payloadBytes.size} bytes with uid ${message.messageId}")
 
-        // TODO: Talk.
-//        connectionsClient.sendPayload(
-//            connectedEndpoints.toList(),
-//            Payload.fromBytes(payloadBytes)
-//        )
+        connectionsClient.sendPayload(
+            EndpointRegistry.getDirectlyConnectedEndpoints().map { it.id }.toList(),
+            Payload.fromBytes(payloadBytes)
+        )
     }
 
     private val payloadCallback = object : PayloadCallback() {
@@ -139,10 +211,33 @@ object NearbyConnectionsManager {
                 seenMessageIds[receivedMessage.messageId] = System.currentTimeMillis()
                 Log.i(
                     TAG,
-                    "Received message from $endpointId with uid ${receivedMessage.messageId}. Re-broadcasting."
+                    "Received message from $endpointId with uid ${receivedMessage.messageId}."
                 )
 
-                // TODO: Do something with the message
+                if (receivedMessage.messageType == NetworkMessage.Companion.Types.GOSSIP) {
+                    try {
+                        val gossip = Json.decodeFromString(
+                            Gossip.serializer(),
+                            receivedMessage.messageContent!!
+                        )
+                        Log.d(TAG, "Received gossip from $endpointId with peers: ${gossip.peers}")
+
+                        val senderEndpoint = EndpointRegistry.get(endpointId)
+                        senderEndpoint.immediateConnections = gossip.peers.size
+
+                        val newDistance = receivedMessage.hopCount + 1
+                        gossip.peers.forEach { peerId ->
+                            if (peerId != localId) {
+                                val endpoint = EndpointRegistry.get(peerId)
+                                if ((endpoint.distance ?: Int.MAX_VALUE) > newDistance) {
+                                    endpoint.distance = newDistance
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to parse gossip message", e)
+                    }
+                }
 
                 // Re-broadcast to other connected endpoints with incremented hop count.
                 val otherEndpoints =
@@ -171,8 +266,7 @@ object NearbyConnectionsManager {
                 PayloadTransferUpdate.Status.FAILURE ->
                     Log.e(
                         TAG,
-                        "FAILURE: Payload ${update.payloadId} transfer to $endpointId failed.",
-                        Exception("PayloadTransferUpdate Failure")
+                        "FAILURE: Payload ${update.payloadId} transfer to $endpointId failed."
                     )
 
                 PayloadTransferUpdate.Status.CANCELED ->
@@ -199,7 +293,7 @@ object NearbyConnectionsManager {
             }
             .addOnFailureListener { e ->
                 Log.e(TAG, "Failed to request connection to $endpointId", e)
-                if(e.toString().contains("STATUS_ALREADY_CONNECTED_TO_ENDPOINT")) {
+                if (e.toString().contains("STATUS_ALREADY_CONNECTED_TO_ENDPOINT")) {
                     Log.w(TAG, "... but we are already connected?")
                     endpoint.distance = 1
                 } else {
@@ -210,10 +304,10 @@ object NearbyConnectionsManager {
     }
 
     // We have decided to disconnect from this endpoing to make the mesh better
-    //    private fun disconnectFromEndpoint(endpointId: String) {
-    //        Log.i(TAG, "Choosing to disconnect from $endpointId")
-    //        connectionsClient.disconnectFromEndpoint(endpointId)
-    //    }
+    private fun disconnectFromEndpoint(endpointId: String) {
+        Log.i(TAG, "Choosing to disconnect from $endpointId")
+        connectionsClient.disconnectFromEndpoint(endpointId)
+    }
 
     private val endpointDiscoveryCallback = object : EndpointDiscoveryCallback() {
         override fun onEndpointFound(
@@ -276,7 +370,7 @@ object NearbyConnectionsManager {
 
             override fun onDisconnected(endpointId: String) {
                 val endpoint = EndpointRegistry.get(endpointId, autoUpdateTs = false)
-                Log.i(TAG, "onDisconnected from $endpointId")
+                Log.w(TAG, "onDisconnected from $endpointId, endpoint: $endpoint")
                 endpoint.distance?.let { dist ->
                     if (dist < 2) {
                         endpoint.distance = null

@@ -9,24 +9,6 @@ import kotlinx.serialization.json.Json
 @Suppress("unused")
 class JavaScriptInjectedAndroid(private val context: Context) {
 
-//    /** Top level ls */
-//    private fun ls(
-//        path: String = "/",
-//        listFolders: Boolean = false,
-//    ): List<String> {
-//
-//        return context.assets.list(path.removePrefix("/"))?.filter { asset ->
-//            Log.d(TAG, "ls $path found: $asset")
-//            val assetPath = path + asset
-//            val isDir = try {
-//                context.assets.list(assetPath)?.isNotEmpty()
-//            } catch (_: IOException) {
-//                false
-//            }
-//            listFolders == isDir
-//        } ?: emptyList()
-//    }
-
     private val visualizations: Set<String> by lazy {
         (context.assets.list("")?.filter { asset ->
             context.assets.list(asset)?.contains("index.html") ?: false
