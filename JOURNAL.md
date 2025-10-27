@@ -253,8 +253,6 @@ in the future.
 * **FUTURE: `ServiceHardener`:** A watchdog service that monitors the health of the application and
   can restart it if it becomes unresponsive.
 
-
-
 ## 8. FUTURE: API Reference
 
 If a Ktor-based `LocalHttpServer` is implemented, the following API endpoints from the original
@@ -266,3 +264,19 @@ project could be a good starting point:
 * `GET /display`: Triggers the `WebAppActivity` on remote peers.
 * `POST /send-file`: Initiates a file transfer.
 * `GET /{path...}`: Serves static files.
+
+# Refactor: Automatic Start on Permission Grant
+
+## Goal
+
+- To improve the user experience by automatically starting the mesh service as soon as the necessary permissions are granted.
+- To remove the need for the user to manually click an "Authorize Mesh" button after granting permissions.
+- To make the app launch seamlessly, whether started manually or via a script.
+
+## Changes
+
+- [x] Modified `MainActivity.kt` to check for all required dangerous permissions upon launch.
+- [x] If all permissions are granted, the app now automatically calls `startMesh()`, bypassing the authorization button.
+- [x] This behavior applies to all app launches, making the manual and scripted launch experiences consistent.
+- [x] Removed the now-redundant `--ez auto_start true` flag from the `deploy_all.sh` deployment script.
+- [x] Verified that the permission checking is comprehensive and covers all requirements for the Nearby Connections API.

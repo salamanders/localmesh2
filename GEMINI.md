@@ -13,7 +13,8 @@ including the device ID, P2P status, and the number of peers. It also lists avai
 
 The application is written in Kotlin and uses Gradle for building and Jetpack Compose for the UI.
 
-The progress of the project is maintained in [JOURNAL.md].  All major changes must be logged in the journal.  
+The progress of the project is maintained in [JOURNAL.md]. All major changes must be logged in the
+journal.
 
 ---
 
@@ -136,9 +137,21 @@ These are critial for Jules or gemini-cli to function.
   required.
 * **Logcat Filtering:** `logcat` output is too large to read without filters. Start with tight
   filters and relax them as needed.
-* **Process IDs:** The process ID changes on every run. Filter logs accordingly.  If a logcat is ever empty, back up and reconfirm the process id, which device it is running on, and re-install as necessary.
+* **Process IDs:** The process ID changes on every run. Filter logs accordingly. If a logcat is ever
+  empty, back up and reconfirm the process id, which device it is running on, and re-install as
+  necessary.
 * **Skipping Large Files:** Always skip reading the content of JavaScript libraries like
   `three.min.js` or `Tween.min.js`, they will overwhelm the context.
+
+When trying to locate a bug, it is ok to change specific lines, but do so in a way that makes it
+obvious what the temporary change is. For example, the following keeps the changed line and clearly
+comments the temporary workaround/debugging step.
+
+```
+89 - val advertisingName = "$localName:${connectedEndpoints.size}"
+89 + // val advertisingName = "$localName:${connectedEndpoints.size}"
+90 + val advertisingName = localName // EXPERIMENT: Stop changing endpoint name
+```
 
 ---
 
@@ -147,7 +160,12 @@ These are critial for Jules or gemini-cli to function.
 The original project had a robust method for end-to-end testing using `adb` and `curl`. This is a
 good model to follow.
 
-IMPORTANT: The agent often has issues getting logcat.  Every time, the agent should get the most recent 5 lines from the logcat directly (filtered to the app) to prove it works and to prove it isn't empty.  Then the agent should dump the logcat to a local temp file at `./temp/logcat_{device id}.txt`.  This file will always be too big to read, but the agent can then repeatedly grep the file looking for evidence.  Always grep with a limit from the bottom-up, e.g. `grep "pattern" filename | tail -n 50` to avoid overwhelming the context.
+IMPORTANT: The agent often has issues getting logcat. Every time, the agent should get the most
+recent 5 lines from the logcat directly (filtered to the app) to prove it works and to prove it
+isn't empty. Then the agent should dump the logcat to a local temp file at
+`./temp/logcat_{device id}.txt`. This file will always be too big to read, but the agent can then
+repeatedly grep the file looking for evidence. Always grep with a limit from the bottom-up, e.g.
+`grep "pattern" filename | tail -n 50` to avoid overwhelming the context.
 
 ### Test Workflow
 

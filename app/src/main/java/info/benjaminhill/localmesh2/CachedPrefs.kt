@@ -1,6 +1,7 @@
 package info.benjaminhill.localmesh2
 
 import android.content.Context
+import android.util.Log
 import androidx.core.content.edit
 import java.math.BigInteger
 import java.security.MessageDigest
@@ -10,19 +11,32 @@ object CachedPrefs {
 
     private const val PREF_FILE_NAME = "device_id_prefs"
     private const val PREF_KEY_ID = "install_uuid"
+    private const val TAG = "CachedPrefs"
 
     @Volatile
     private var uuid: String? = null
 
     @Synchronized
-    fun getId(context: Context): String = uuid ?: run {
-        val prefs = context.getSharedPreferences(PREF_FILE_NAME, Context.MODE_PRIVATE)
-        prefs.getString(PREF_KEY_ID, null) ?: run {
-            getCharHash(UUID.randomUUID().toString(), 5).also { newId ->
-                prefs.edit { putString(PREF_KEY_ID, newId) }
-            }
+    fun getId(context: Context): String {
+        if (uuid != null) {
+            return uuid!!
         }
-    }.also { uuid = it }
+
+        val prefs = context.getSharedPreferences(PREF_FILE_NAME, Context.MODE_PRIVATE)
+        val storedId = prefs.getString(PREF_KEY_ID, null)
+
+        if (storedId != null) {
+            Log.d(TAG, "Found stored ID: $storedId")
+            uuid = storedId
+            return storedId
+        }
+
+        val newId = getCharHash(UUID.randomUUID().toString(), 5)
+        Log.w(TAG, "No stored ID found. Generating new ID: $newId")
+        prefs.edit { putString(PREF_KEY_ID, newId) }
+        uuid = newId
+        return newId
+    }
 
 
     /**

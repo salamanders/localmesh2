@@ -1,5 +1,4 @@
 const deviceIdSpan = document.getElementById('device-id');
-const statusTextSpan = document.getElementById('status-text');
 const peerCountSpan = document.getElementById('peer-count');
 const peersList = document.getElementById('peers');
 const foldersList = document.getElementById('folders');
@@ -11,18 +10,22 @@ async function updateStatus() {
         console.info('Got status', JSON.stringify(status));
 
         deviceIdSpan.textContent = status.id || '...';
-        statusTextSpan.textContent = 'Online'; // Hardcoded for now
 
         // Update Peer List
-        peerCountSpan.textContent = status.peers.length;
-        const newPeerIds = status.peers.map(p => p.id);
-        peersList.innerHTML = '';
-        newPeerIds.toSorted().forEach(id => {
-            const li = document.createElement('li');
-            li.textContent = id;
-            li.dataset.peerId = id;
-            peersList.appendChild(li);
-        });
+        const peerMap = status.peers; // e.g., {"peer1":1, "peer2":1}
+        const newPeerIds = Object.keys(peerMap);
+
+        peerCountSpan.textContent = newPeerIds.length;
+//        peersList.innerHTML = ''; // Clear existing list
+//
+//        newPeerIds.sort().forEach(id => {
+//            const li = document.createElement('li');
+//            // Display the peer ID and its distance
+//            li.textContent = `${id} (distance: ${peerMap[id]})`;
+//            li.dataset.peerId = id;
+//            peersList.appendChild(li);
+//        });
+
 
         // Update folder list (visualizations)
         const contentFolders = status.visualizations;
@@ -45,12 +48,11 @@ async function updateStatus() {
             foldersList.appendChild(li);
         });
     } catch (e) {
-        statusTextSpan.textContent = 'Error';
         console.error('Failed to fetch status:', e);
     }
 }
 
-// Initial fetch and then poll every 3 seconds
+// Initial fetch and then poll
 updateStatus();
-setInterval(updateStatus, 5000);
+setInterval(updateStatus, 10 * 1000);
 console.log('LOCALMESH_SCRIPT_SUCCESS:root');

@@ -43,7 +43,7 @@ fun FullScreenWebView(url: String) {
                 settings.mediaPlaybackRequiresUserGesture = false
                 setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
-                // TODO: Use the modern WebViewAssetLoader method.
+                // TODO(someday): Use the modern WebViewAssetLoader method.
                 settings.allowFileAccess = true
                 settings.allowFileAccessFromFileURLs = true
 

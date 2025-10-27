@@ -15,8 +15,8 @@
 ## Checklist
 
 - [X] Create `CBOR.md`
-- [ ] Add `kotlinx-serialization-cbor` dependency to `app/build.gradle.kts`.
-- [ ] Modify `NetworkMessage.kt` to use `Cbor` instead of `Json`.
-- [ ] Verify the change by building the project.
-- [ ] Complete pre-commit steps.
-- [ ] Submit the change.
+- [X] Add `kotlinx-serialization-cbor` dependency to `app/build.gradle.kts`.
+- [X] Modify `NetworkMessage.kt` to use `Cbor` instead of `Json`.
+- [X] Verify the change by building the project.
+- [X] Complete pre-commit steps.
+- [X] Submit the change.

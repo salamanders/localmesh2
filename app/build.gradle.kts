@@ -66,5 +66,5 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.kotlinx.serialization.json)
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-cbor:1.6.3")
+    implementation(libs.kotlinx.serialization.cbor)
 }

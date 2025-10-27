@@ -29,27 +29,18 @@ import kotlin.time.Duration.Companion.minutes
  * (like when to connect, disconnect, or reshuffle) to it, acting as the "muscle" to the
  * optimizer's "brain".
  */
-class NearbyConnectionsManager(
-    context: Context,
-    private val scope: CoroutineScope,
-) {
+object NearbyConnectionsManager {
+    private const val TAG = "P2P"
+    private const val SERVICE_ID = "info.benjaminhill.localmesh2"
 
-    private var messageCleanupJob: Job? = null
-    private val serviceId = "info.benjaminhill.localmesh2"
-    private val connectionsClient: ConnectionsClient = Nearby.getConnectionsClient(context)
-    private val localName = CachedPrefs.getId(context)
+    private const val MAX_CONNECTIONS_HARDWARE_LIMIT = 7
 
-    // The "brain" of the mesh, making all strategic decisions.
-    private val topologyOptimizer: TopologyOptimizer =
-        TopologyOptimizer(scope, ::disconnectFromEndpoint, ::requestConnection)
+    // Strategy.P2P_CLUSTER is used as it supports M-to-N connections,
+    // which is suitable for a dynamic snake topology where multiple
+    // endpoints can be discovering or advertising simultaneously.
+    private val DISCOVERY_OPTIONS =
+        DiscoveryOptions.Builder().setStrategy(Strategy.P2P_CLUSTER).build()
 
-    private val connectedEndpoints = mutableSetOf<String>()
-
-    /**
-     * Discovered endpoints and their reported number of connections.
-     * endpointId -> connectionCount
-     */
-    private val discoveredEndpoints = ConcurrentHashMap<String, Int>()
 
     /**
      * A map of recently seen message UIDs to the timestamp of their arrival.
@@ -57,67 +48,17 @@ class NearbyConnectionsManager(
      * uid -> timestamp
      */
     private val seenMessageIds = ConcurrentHashMap<String, Long>()
-
-    fun advertiseWithAccuratePeerCount() {
-        connectionsClient.stopAdvertising()
-        // Strategy.P2P_CLUSTER is used as it supports M-to-N connections,
-        // which is suitable for a dynamic snake topology where multiple
-        // endpoints can be discovering or advertising simultaneously.
-        val advertisingOptions =
-            AdvertisingOptions.Builder().setStrategy(Strategy.P2P_CLUSTER).build()
-
-        // The local endpoint name is advertised with the number of connections it has.
-        // e.g. "MyDeviceName:2"
-        val advertisingName = "$localName:${connectedEndpoints.size}"
-
-        connectionsClient.startAdvertising(
-            advertisingName, serviceId, connectionLifecycleCallback, advertisingOptions
-        ).addOnSuccessListener {
-            Log.i(TAG, "$advertisingName started Advertising.")
-        }.addOnFailureListener { e ->
-            Log.e(TAG, "$advertisingName failed to start advertising", e)
-        }
-    }
-
-    fun startDiscovery() {
-        val discoveryOptions = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_CLUSTER).build()
-
-        connectionsClient.startDiscovery(
-            serviceId, endpointDiscoveryCallback, discoveryOptions
-        ).addOnSuccessListener {
-            Log.i(TAG, "$localName started discovery.")
-            topologyOptimizer.start(connectedEndpoints, discoveredEndpoints)
-        }.addOnFailureListener { e ->
-            Log.e(TAG, "$localName failed to start discovery", e)
-        }
-        startMessageCleanup()
-    }
-
-    fun stop() {
-        Log.i(TAG, "Stopping nearby connections.")
-        topologyOptimizer.stop()
-        messageCleanupJob?.cancel()
-        connectionsClient.stopAllEndpoints()
-    }
-
-    // TODO: Broadcasting a message to the network.
-    fun broadcast(type: NetworkMessage.Companion.Types, content: String) {
-        val message = NetworkMessage(
-            sendingNodeId = localName,
-            messageType = type,
-            messageContent = content,
-        )
-        val payloadBytes = message.toByteArray()
-        seenMessageIds[message.messageId] = System.currentTimeMillis()
-        Log.i(TAG, "Broadcasting ${payloadBytes.size} bytes with uid ${message.messageId}")
-        connectionsClient.sendPayload(
-            connectedEndpoints.toList(),
-            Payload.fromBytes(payloadBytes)
-        )
-    }
-
-    private fun startMessageCleanup() {
-        messageCleanupJob = scope.launch {
+    private lateinit var appContext: Context
+    private lateinit var scope: CoroutineScope
+    private lateinit var localId: String
+    private lateinit var messageCleanupJob: Job
+    private lateinit var connectionsClient: ConnectionsClient
+    fun initialize(newContext: Context, newScope: CoroutineScope) {
+        this.appContext = newContext.applicationContext
+        this.scope = newScope
+        this.localId = CachedPrefs.getId(this.appContext)
+        this.connectionsClient = Nearby.getConnectionsClient(this.appContext)
+        this.messageCleanupJob = this.scope.launch {
             while (true) {
                 delay(1.minutes)
                 val now = System.currentTimeMillis()
@@ -127,6 +68,60 @@ class NearbyConnectionsManager(
         }
     }
 
+    fun startAdvertising() {
+        Log.i(TAG, "startAdvertising()...")
+        connectionsClient.stopAdvertising()
+
+        val advertisingOptions =
+            AdvertisingOptions.Builder().setStrategy(
+                // Match the discovery strategy
+                DISCOVERY_OPTIONS.strategy
+            ).build()
+
+        connectionsClient.startAdvertising(
+            localId, SERVICE_ID, connectionLifecycleCallback, advertisingOptions
+        ).addOnSuccessListener {
+            Log.i(TAG, "$localId started Advertising.")
+        }.addOnFailureListener { e ->
+            Log.e(TAG, "$localId failed to start advertising", e)
+        }
+    }
+
+    fun startDiscovery() {
+        connectionsClient.startDiscovery(
+            SERVICE_ID, endpointDiscoveryCallback, DISCOVERY_OPTIONS
+        ).addOnSuccessListener {
+            Log.i(TAG, "$localId started discovery.")
+            // The "brain" of the mesh, making all strategic decisions.
+            // TopologyOptimizer.initialize(this.scope, ::disconnectFromEndpoint, ::requestConnection)
+        }.addOnFailureListener { e ->
+            Log.e(TAG, "$localId failed to start discovery", e)
+        }
+    }
+
+    fun stop() {
+        Log.w(TAG, "NearbyConnectionsManager.stop() called.")
+        messageCleanupJob.cancel()
+        connectionsClient.stopAllEndpoints()
+    }
+
+    // TODO: Broadcasting a message to the network.
+    fun broadcast(type: NetworkMessage.Companion.Types, content: String) {
+        val message = NetworkMessage(
+            sendingNodeId = localId,
+            messageType = type,
+            messageContent = content,
+        )
+        val payloadBytes = message.toByteArray()
+        seenMessageIds[message.messageId] = System.currentTimeMillis()
+        Log.i(TAG, "Broadcasting ${payloadBytes.size} bytes with uid ${message.messageId}")
+
+        // TODO: Talk.
+//        connectionsClient.sendPayload(
+//            connectedEndpoints.toList(),
+//            Payload.fromBytes(payloadBytes)
+//        )
+    }
 
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
@@ -150,12 +145,13 @@ class NearbyConnectionsManager(
                 // TODO: Do something with the message
 
                 // Re-broadcast to other connected endpoints with incremented hop count.
-                val otherEndpoints = connectedEndpoints.filter { it != endpointId }
+                val otherEndpoints =
+                    EndpointRegistry.getDirectlyConnectedEndpoints().filter { it.id != endpointId }
                 if (otherEndpoints.isNotEmpty()) {
                     val messageToRebroadcast =
                         receivedMessage.copy(hopCount = receivedMessage.hopCount + 1)
                     connectionsClient.sendPayload(
-                        otherEndpoints,
+                        otherEndpoints.map { it.id },
                         Payload.fromBytes(messageToRebroadcast.toByteArray())
                     )
                 }
@@ -194,66 +190,47 @@ class NearbyConnectionsManager(
     }
 
     private fun requestConnection(endpointId: String) {
+        val endpoint = EndpointRegistry.get(endpointId)
         Log.i(TAG, "Requesting connection to $endpointId")
-        connectionsClient.requestConnection(localName, endpointId, connectionLifecycleCallback)
+        connectionsClient.requestConnection(localId, endpointId, connectionLifecycleCallback)
             .addOnSuccessListener {
                 Log.d(TAG, "Successfully requested connection to $endpointId")
+                endpoint.distance = 1
             }
             .addOnFailureListener { e ->
                 Log.e(TAG, "Failed to request connection to $endpointId", e)
+                if(e.toString().contains("STATUS_ALREADY_CONNECTED_TO_ENDPOINT")) {
+                    Log.w(TAG, "... but we are already connected?")
+                    endpoint.distance = 1
+                } else {
+                    endpoint.distance = null
+                }
+
             }
     }
 
-    private fun disconnectFromEndpoint(endpointId: String) {
-        Log.i(TAG, "Disconnecting from $endpointId")
-        connectionsClient.disconnectFromEndpoint(endpointId)
-    }
+    // We have decided to disconnect from this endpoing to make the mesh better
+    //    private fun disconnectFromEndpoint(endpointId: String) {
+    //        Log.i(TAG, "Choosing to disconnect from $endpointId")
+    //        connectionsClient.disconnectFromEndpoint(endpointId)
+    //    }
 
     private val endpointDiscoveryCallback = object : EndpointDiscoveryCallback() {
         override fun onEndpointFound(
             endpointId: String, discoveredEndpointInfo: DiscoveredEndpointInfo
         ) {
-            Log.d(TAG, "onEndpointFound: $endpointId, ${discoveredEndpointInfo.endpointName}")
-            val parts = discoveredEndpointInfo.endpointName.split(":")
-            if (parts.size == 2) {
-                val connectionCount = parts[1].toIntOrNull()
-                if (connectionCount != null) {
-                    discoveredEndpoints[endpointId] = connectionCount
-                } else {
-                    Log.w(
-                        TAG,
-                        "Could not parse connection count: ${discoveredEndpointInfo.endpointName}"
-                    )
-                    return
-                }
-            } else {
-                Log.w(
-                    TAG,
-                    "Unexpected endpoint name format: ${discoveredEndpointInfo.endpointName}"
-                )
-                return
-            }
-
-            val theirConnectionCount = discoveredEndpoints[endpointId] ?: return
-
-            if (topologyOptimizer.shouldConnectTo(
-                    endpointId,
-                    theirConnectionCount,
-                    connectedEndpoints.size,
-                    connectedEndpoints
-                )
-            ) {
-                Log.i(
-                    TAG,
-                    "TopologyOptimizer decided to connect to $endpointId. Requesting connection."
-                )
+            val endpoint = EndpointRegistry.get(endpointId)
+            val distance = endpoint.distance ?: Int.MAX_VALUE
+            if (distance > 2) {
                 requestConnection(endpointId)
             }
         }
 
         override fun onEndpointLost(endpointId: String) {
             Log.i(TAG, "Endpoint lost: $endpointId")
-            discoveredEndpoints.remove(endpointId)
+            // Keep the knowledge of the endpoint, but set its distance to null so it isn't in the list of immediate peers.
+            // Don't update the TS, this doesn't count as "hearing from it"
+            EndpointRegistry.get(endpointId, autoUpdateTs = false).distance = null
         }
     }
 
@@ -262,43 +239,50 @@ class NearbyConnectionsManager(
             override fun onConnectionInitiated(
                 endpointId: String, connectionInfo: ConnectionInfo
             ) {
-                Log.i(TAG, "onConnectionInitiated from $endpointId")
-                if (connectedEndpoints.size < 7) {
-                    Log.i(TAG, "Accepting connection from $endpointId")
-                    connectionsClient.acceptConnection(endpointId, payloadCallback)
-                } else {
+                val endpoint = EndpointRegistry.get(endpointId)
+                Log.d(TAG, "onConnectionInitiated from ${endpoint.id}")
+                if (EndpointRegistry.getDirectlyConnectedEndpoints().size >= MAX_CONNECTIONS_HARDWARE_LIMIT) {
                     Log.i(
                         TAG,
                         "Rejecting connection from $endpointId, already at max connections (7+)."
                     )
                     connectionsClient.rejectConnection(endpointId)
+                    return
                 }
+                Log.d(TAG, "Accepting connection from $endpointId")
+                connectionsClient.acceptConnection(endpointId, payloadCallback)
+                // Don't update the distance yet.
             }
 
             override fun onConnectionResult(
                 endpointId: String, resolution: ConnectionResolution
             ) {
+                val endpoint = EndpointRegistry.get(endpointId)
                 if (resolution.status.isSuccess) {
                     Log.i(TAG, "Successfully connected to $endpointId")
-                    connectedEndpoints.add(endpointId)
-                    advertiseWithAccuratePeerCount()
+                    endpoint.distance = 1
                 } else {
                     Log.w(
                         TAG,
-                        "Failed to connect to $endpointId: ${resolution.status.statusMessage}"
+                        "onConnectionResult failed to connect to $endpointId: ${resolution.status.statusMessage}"
                     )
+                    endpoint.distance?.let { dist ->
+                        if (dist < 2) {
+                            endpoint.distance = null
+                        }
+                    }
                 }
             }
 
             override fun onDisconnected(endpointId: String) {
+                val endpoint = EndpointRegistry.get(endpointId, autoUpdateTs = false)
                 Log.i(TAG, "onDisconnected from $endpointId")
-                connectedEndpoints.remove(endpointId)
-                advertiseWithAccuratePeerCount()
-                topologyOptimizer.onDisconnected(connectedEndpoints, discoveredEndpoints)
+                endpoint.distance?.let { dist ->
+                    if (dist < 2) {
+                        endpoint.distance = null
+                    }
+                }
+                // TopologyOptimizer.onDisconnected(endpointId)
             }
         }
-
-    companion object {
-        private const val TAG = "NCM"
-    }
 }

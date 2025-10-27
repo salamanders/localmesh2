@@ -1,6 +1,5 @@
 package info.benjaminhill.localmesh2
 
-import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -16,44 +15,16 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 
 class MainActivity : ComponentActivity() {
 
-    lateinit var nearbyConnectionsManager: NearbyConnectionsManager
-
-    private val REQUEST_CODE_REQUIRED_PERMISSIONS = 1
-
-    // Modern Android API for requesting permissions and handling the user's response.
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            Log.w(TAG, "Not granted ACCESS_FINE_LOCATION.")
-            requestPermissions(
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), REQUEST_CODE_REQUIRED_PERMISSIONS
-            )
-        }
-
         if (permissions.all { it.value }) {
-            Log.i(TAG, "Permissions granted, starting service...")
-            nearbyConnectionsManager = NearbyConnectionsManager(this, lifecycleScope)
-            nearbyConnectionsManager.startDiscovery()
-            nearbyConnectionsManager.advertiseWithAccuratePeerCount()
-
-            // Launch the DisplayActivity to show the main UI. Due to its 'singleTop' launchMode,
-            // future P2P display commands will reuse this Activity instance by sending it a new Intent
-            // via the onNewIntent() callback.
-            Intent(this, WebAppActivity::class.java).apply {
-                putExtra(WebAppActivity.EXTRA_PATH, "index.html")
-            }.also {
-                startActivity(it)
-            }
-            // Close the MainActivity so the user can't navigate back to the start button.
-            finish()
-
+            startMesh()
         } else {
             Log.e(TAG, "User denied permissions.")
             Toast.makeText(
@@ -65,24 +36,48 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        setContent {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                val context = LocalContext.current
-                Button(onClick = {
-                    requestPermissionLauncher.launch(
-                        PermissionUtils.getDangerousPermissions(
-                            context
-                        )
-                    )
-                }) {
-                    Text("Authorize Mesh")
+        val dangerousPermissions = PermissionUtils.getDangerousPermissions(this)
+        val allPermissionsGranted = dangerousPermissions.all {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
+
+        if (allPermissionsGranted) {
+            Log.i(TAG, "Permissions already granted, starting mesh.")
+            startMesh()
+        } else {
+            setContent {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Button(onClick = {
+                        requestPermissionLauncher.launch(dangerousPermissions)
+                    }) {
+                        Text("Authorize Mesh")
+                    }
                 }
             }
         }
+    }
+
+    private fun startMesh() {
+        Log.i(TAG, "Permissions granted, starting service...")
+        NearbyConnectionsManager.initialize(this, lifecycleScope)
+        NearbyConnectionsManager.startDiscovery()
+        NearbyConnectionsManager.startAdvertising()
+
+        Intent(this, WebAppActivity::class.java).apply {
+            putExtra(WebAppActivity.EXTRA_PATH, "index.html")
+        }.also {
+            startActivity(it)
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.w(TAG, "MainActivity.onDestroy() called.")
+        NearbyConnectionsManager.stop()
     }
 
     companion object {

@@ -3,9 +3,8 @@ package info.benjaminhill.localmesh2
 import android.content.Context
 import android.util.Log
 import android.webkit.JavascriptInterface
-import org.json.JSONArray
-import org.json.JSONObject
-
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 
 @Suppress("unused")
 class JavaScriptInjectedAndroid(private val context: Context) {
@@ -34,20 +33,25 @@ class JavaScriptInjectedAndroid(private val context: Context) {
         } ?: emptyList()).toSortedSet()
     }
 
+    @Serializable
+    data class Status(
+        val visualizations: Set<String>,
+        val id: String,
+        // All known peers and distance (if known)
+        val peers: Map<String, Int?>,
+        val timestamp: Long,
+    )
+
     @JavascriptInterface
-    fun getStatus(): String = JSONObject().apply {
-        put("visualizations", JSONArray(visualizations))
-        put("id", CachedPrefs.getId(context))
-        put(
-            "peers", JSONArray(
-                listOf(
-                    mapOf("id" to "abc", "hops" to 1, "age" to 1234567890),
-                    mapOf("id" to "def", "hops" to 1, "age" to 1234567890),
-                    mapOf("id" to "ghi", "hops" to 2, "age" to 1234567890),
-                ).map { JSONObject(it as Map<String, Any>) })
+    fun getStatus(): String = Json.encodeToString(
+        Status(
+            visualizations = visualizations,
+            id = CachedPrefs.getId(context),
+            peers = EndpointRegistry.getDirectlyConnectedEndpoints()
+                .associate { it.id to it.distance },
+            timestamp = System.currentTimeMillis()
         )
-        put("timestamp", System.currentTimeMillis())
-    }.toString()
+    )
 
     @JavascriptInterface
     fun sendPeerDisplayCommand(folder: String) {
@@ -56,6 +60,6 @@ class JavaScriptInjectedAndroid(private val context: Context) {
     }
 
     companion object {
-        const val TAG = "JSInjectedAndroid"
+        const val TAG = "JSAndroid"
     }
 }
