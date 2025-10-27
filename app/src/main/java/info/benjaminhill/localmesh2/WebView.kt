@@ -33,7 +33,7 @@ fun FullScreenWebView(url: String) {
             WebView(context).apply {
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
+                    ViewGroup.LayoutParams.MATCH_PARENT,
                 )
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
@@ -67,41 +67,6 @@ fun FullScreenWebView(url: String) {
                             }
                         }
                     }
-// Instead of this, we are using JavaScriptInjectedAndroid
-//                    override fun shouldInterceptRequest(
-//                        view: WebView?,
-//                        request: WebResourceRequest?
-//                    ): WebResourceResponse? {
-//
-//                        val url = request?.url.toString()
-//
-//                        // Check if the URL is the one we want to intercept
-//                        if (url.endsWith("/getStatus")) {
-//                            // 1. Generate your dynamic JSON
-//                            val json = """
-//                                {
-//                                    "status": "Online (from intercept)",
-//                                    "battery": 85,
-//                                    "timestamp": ${System.currentTimeMillis()}
-//                                }
-//                            """.trimIndent()
-//
-//                            // 2. Create an InputStream from the JSON string
-//                            val dataStream = json.byteInputStream()
-//
-//                            // 3. Return a WebResourceResponse
-//                            // This tricks the WebView into thinking it just
-//                            // loaded this data from a file or server.
-//                            return WebResourceResponse(
-//                                "application/json", // The MIME type
-//                                "utf-8",             // The encoding
-//                                dataStream           // The data
-//                            )
-//                        }
-//
-//                        // For all other requests, let the WebView handle it normally
-//                        return super.shouldInterceptRequest(view, request)
-//                    }
 
                     override fun onReceivedError(
                         view: WebView?,

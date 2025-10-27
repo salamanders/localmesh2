@@ -10,9 +10,12 @@ import kotlinx.serialization.json.Json
 class JavaScriptInjectedAndroid(private val context: Context) {
 
     private val visualizations: Set<String> by lazy {
-        (context.assets.list("")?.filter { asset ->
-            context.assets.list(asset)?.contains("index.html") ?: false
-        } ?: emptyList()).toSortedSet()
+        context.assets.list("")
+            ?.filter { asset ->
+                context.assets.list(asset)?.contains("index.html") == true
+            }
+            ?.toSortedSet()
+            ?: emptySet()
     }
 
     @Serializable

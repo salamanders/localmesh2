@@ -30,6 +30,10 @@ class WebAppActivity : ComponentActivity() {
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
 
+        window.attributes = window.attributes.apply {
+            screenBrightness = 0.8f
+        }
+
         // Handles index.html
         handleIntent(intent)
 
@@ -54,7 +58,7 @@ class WebAppActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         intent?.extras?.let { bundle ->
-            for (key in bundle.keySet()) {
+            bundle.keySet().forEach { key ->
                 Log.i(TAG, "Intent extra: $key = ${bundle.getString(key)}")
             }
         }
@@ -63,10 +67,10 @@ class WebAppActivity : ComponentActivity() {
 
     /** Should only be called from the static navigateTo */
     private fun navigateTo(path: String) {
-        if (path.isNotBlank()) {
-            Log.i(TAG, "Navigating to $path")
-            pathState.value = "$path/index.html"
-        }
+        path.takeIf { it.isNotBlank() }?.let { nonBlankPath ->
+            Log.i(TAG, "Navigating to $nonBlankPath")
+            pathState.value = "$nonBlankPath/index.html"
+        } ?: Log.w(TAG, "navigateTo path was blank.")
     }
 
 
@@ -77,9 +81,11 @@ class WebAppActivity : ComponentActivity() {
         const val EXTRA_PATH = "info.benjaminhill.localmesh2.EXTRA_PATH"
         private var instance: WebAppActivity? = null
         fun navigateTo(path: String) {
-            instance?.runOnUiThread {
-                instance?.navigateTo(path)
-            }
+            instance?.let { activity ->
+                activity.runOnUiThread {
+                    activity.navigateTo(path)
+                }
+            } ?: Log.w(TAG, "navigateTo called but no WebAppActivity instance is available.")
         }
     }
 }
