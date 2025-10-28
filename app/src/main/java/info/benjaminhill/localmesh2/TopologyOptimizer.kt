@@ -56,12 +56,12 @@ object TopologyOptimizer {
                                 TAG,
                                 "Below connection threshold, attempting to connect to $peerToConnect"
                             )
-                            try {
+                            connected = try {
                                 nearbyConnectionsManager.requestConnection(peerToConnect)
-                                connected = true
                             } catch (e: Exception) {
                                 Log.e(TAG, "Failed to connect to $peerToConnect", e)
                                 delay(3.seconds)
+                                false
                             }
                         }
                     }
