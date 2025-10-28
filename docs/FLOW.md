@@ -17,7 +17,7 @@ optimized.
    connections, meaning its connection slots are full. #QA:OK
 
 2. **NewNode Startup:** A new node, `NewNode`, starts the application. The
-   `NearbyConnectionsManager` and `TopologyOptimizer` are initialized. `NewNode` begins advertising its presence and
+   `NearbyConnectionsManager` is initialized. `NewNode` begins advertising its presence and
    simultaneously discovering other nodes in the vicinity. #QA:OK
 
 3. **First Discovery:** `NewNode`'s discovery callback is triggered when it finds `Node1`. Since
@@ -27,7 +27,7 @@ optimized.
 4. **Connection Request to a Full Node:** `NewNode` sends a connection request to `Node1`. #QA:OK
 
 5. **`findRedundantPeer` Triggered:** `Node1` receives the request but already has 7 connections (
-   its limit). The `onConnectionInitiated` callback in `NearbyConnectionsManager` delegates the decision to the `TopologyOptimizer`. The `TopologyOptimizer` invokes the `findRedundantPeer()` function to
+   its limit). Instead of rejecting the connection, it invokes the `findRedundantPeer()` function to
    make room. It examines its directly connected peers and finds that they are all at a distance of
     1. It will select one of them to disconnect from. For this example, we'll assume it chooses to
        disconnect from `Node8`. #QA:OK
@@ -50,8 +50,8 @@ optimized.
     * `NewNode`: Connected to `Node1`, `Node2`, and `Node3`. (3 connections) #QA:OK
     * `Node1`, `Node2`, `Node3`: Each has dropped one of their original peers to connect to
       `NewNode`. (7 connections each) #QA:OK
-    * The nodes that were dropped (e.g., `Node8`) now have fewer connections and will use the
-      `TopologyOptimizer`'s `reshuffle()` logic to find and connect to `NewNode`, further integrating it into the mesh.
+    * The nodes that were dropped (e.g., `Node8`) now have fewer connections and will use their own
+      `reshuffle()` logic to find and connect to `NewNode`, further integrating it into the mesh.
       #QA:OK
 
 ## Phase 2: Gossip messages reach a steady state
@@ -109,7 +109,7 @@ have a stable view of the network topology. #QA:OK
 
 3. **Broadcast Initiated:** The `JavaScriptInjectedAndroid` class on `Node1` receives this call. It
    constructs a `NetworkMessage` of type `DISPLAY` with the content "disco" and passes it to the
-   `NearbyConnectionsManager` to be broadcast. The `TopologyOptimizer` is not involved in this process, as it is a simple broadcast. #QA:OK
+   `NearbyConnectionsManager` to be broadcast. #QA:OK
 
 4. **Message Flooding:** `Node1` sends this message to all of its direct peers (e.g., `NewNode`,
    `Node2`, etc.). #QA:OK
