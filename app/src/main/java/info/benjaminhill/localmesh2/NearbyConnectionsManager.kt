@@ -31,7 +31,7 @@ object NearbyConnectionsManager {
     private const val TAG = "P2P"
     private const val SERVICE_ID = "info.benjaminhill.localmesh2"
 
-    private const val MAX_CONNECTIONS_HARDWARE_LIMIT = 7
+    const val MAX_CONNECTIONS_HARDWARE_LIMIT = 7
 
     // Strategy.P2P_CLUSTER is used as it supports M-to-N connections,
     // which is suitable for a dynamic snake topology where multiple
@@ -50,8 +50,6 @@ object NearbyConnectionsManager {
     private lateinit var scope: CoroutineScope
     private lateinit var localId: String
     private lateinit var messageCleanupJob: Job
-    private lateinit var gossipJob: Job
-    private lateinit var reshuffleJob: Job
     private lateinit var connectionsClient: ConnectionsClient
     fun initialize(newContext: Context, newScope: CoroutineScope) {
         this.appContext = newContext.applicationContext
@@ -66,18 +64,13 @@ object NearbyConnectionsManager {
                 seenMessageIds.entries.removeAll { it.value < thirtyMinutesAgo }
             }
         }
-        this.gossipJob = this.scope.launch {
-            while (true) {
-                delay(10_000)
-                broadcastGossip()
-            }
-        }
-        this.reshuffleJob = this.scope.launch {
-            while (true) {
-                delay(30_000)
-                reshuffle()
-            }
-        }
+        TopologyOptimizer.initialize(
+            scope = this.scope,
+            localId = this.localId,
+            broadcastInternal = ::broadcastInternal,
+            disconnectFromEndpoint = ::disconnectFromEndpoint,
+            requestConnection = ::requestConnection
+        )
     }
 
     fun startAdvertising() {
@@ -114,73 +107,11 @@ object NearbyConnectionsManager {
     fun stop() {
         Log.w(TAG, "NearbyConnectionsManager.stop() called.")
         messageCleanupJob.cancel()
-        gossipJob.cancel()
-        reshuffleJob.cancel()
+        TopologyOptimizer.stop()
         connectionsClient.stopAllEndpoints()
     }
 
-    private fun broadcastGossip() {
-        Log.d(TAG, "Time to gossip")
-        val connectedEndpoints = EndpointRegistry.getDirectlyConnectedEndpoints()
-        if (connectedEndpoints.isEmpty()) {
-            return
-        }
-        val message = NetworkMessage(
-            sendingNodeId = localId,
-            messageType = NetworkMessage.Companion.Types.GOSSIP,
-            peers = connectedEndpoints.map { it.id }.toSet(),
-        )
-        broadcastInternal(message)
-    }
 
-
-    private fun reshuffle() {
-        val worstNode = findWorstDistantNode() ?: return
-        val redundantPeer = findRedundantPeer() ?: return
-
-        if (redundantPeer.id != worstNode.id) {
-            Log.i(
-                TAG,
-                "Reshuffling: disconnecting from ${redundantPeer.id} to connect to ${worstNode.id}"
-            )
-            disconnectFromEndpoint(redundantPeer.id)
-            requestConnection(worstNode.id)
-        }
-    }
-
-    private fun findRedundantPeer(): Endpoint? {
-        val immediatePeers = EndpointRegistry.getDirectlyConnectedEndpoints()
-        if (immediatePeers.size < 3) {
-            return null
-        }
-
-        // Calculate redundancy scores for each peer
-        val redundancyScores = immediatePeers.associateWith { peerToScore ->
-            immediatePeers
-                .filter { it != peerToScore }
-                .count { otherPeer ->
-                    otherPeer.immediatePeerIds?.contains(peerToScore.id) ?: false
-                }
-        }
-
-        // Find the peer with the highest score, using immediateConnections as a tie-breaker
-        return immediatePeers.maxWithOrNull(
-            compareBy(
-                { redundancyScores[it] ?: 0 }, // Primary criteria: redundancy score
-            { it.immediateConnections ?: 0 }  // Secondary criteria: connection count
-        ))
-    }
-
-    private fun findWorstDistantNode(): Endpoint? {
-        val fiveMinutesAgo = System.currentTimeMillis() - 5.minutes.inWholeMilliseconds
-        return EndpointRegistry.getAllKnownEndpoints()
-            .filter { it.lastUpdatedTs > fiveMinutesAgo }
-            .filter {
-                val dist = it.distance
-                dist == null || dist > 2
-            }
-            .maxByOrNull { it.distance ?: Int.MAX_VALUE }
-    }
 
     fun broadcastDisplayMessage(displayTarget: String) {
         val message = NetworkMessage(
@@ -356,11 +287,7 @@ object NearbyConnectionsManager {
         override fun onEndpointFound(
             endpointId: String, discoveredEndpointInfo: DiscoveredEndpointInfo
         ) {
-            val endpoint = EndpointRegistry.get(endpointId)
-            val distance = endpoint.distance ?: Int.MAX_VALUE
-            if (distance > 2) {
-                requestConnection(endpointId)
-            }
+            TopologyOptimizer.onEndpointFound(endpointId)
         }
 
         override fun onEndpointLost(endpointId: String) {
@@ -376,33 +303,16 @@ object NearbyConnectionsManager {
             override fun onConnectionInitiated(
                 endpointId: String, connectionInfo: ConnectionInfo
             ) {
-                val endpoint = EndpointRegistry.get(endpointId)
-                Log.d(TAG, "onConnectionInitiated from ${endpoint.id}")
-                if (EndpointRegistry.getDirectlyConnectedEndpoints().size >= MAX_CONNECTIONS_HARDWARE_LIMIT) {
-                    Log.w(
-                        TAG,
-                        "At connection limit. Finding a redundant peer to make room for $endpointId."
-                    )
-                    val redundantPeer = findRedundantPeer()
-                    if (redundantPeer != null) {
-                        Log.i(
-                            TAG,
-                            "Making room for $endpointId by disconnecting from redundant peer ${redundantPeer.id}"
+                TopologyOptimizer.onConnectionInitiated(
+                    endpointId = endpointId,
+                    acceptConnection = {
+                        connectionsClient.acceptConnection(
+                            endpointId,
+                            payloadCallback
                         )
-                        disconnectFromEndpoint(redundantPeer.id)
-                        connectionsClient.acceptConnection(endpointId, payloadCallback)
-                    } else {
-                        Log.e(
-                            TAG,
-                            "At connection limit but couldn't find a redundant peer. Rejecting $endpointId."
-                        )
-                        connectionsClient.rejectConnection(endpointId)
-                    }
-                    return
-                }
-                Log.d(TAG, "Accepting connection from $endpointId")
-                connectionsClient.acceptConnection(endpointId, payloadCallback)
-                // Don't update the distance yet.
+                    },
+                    rejectConnection = { connectionsClient.rejectConnection(endpointId) }
+                )
             }
 
             override fun onConnectionResult(
