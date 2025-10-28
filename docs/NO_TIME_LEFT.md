@@ -48,10 +48,10 @@ This document outlines the shortest path to a functional mesh network.
 
 ## Step 4: NearbyConnectionsManager.broadcast and NetworkMessage.DISPLAY
 
-*   **Goal:** Implement the "Render Locally" button to work: if checked like it is now continue to
-    show the visualization on the same device, but if unchecked, show the visualization on ALL other
-    devices.
-*   **Mechanism:**
+* **Goal:** Implement the "Render Locally" button to work: if checked like it is now continue to
+  show the visualization on the same device, but if unchecked, show the visualization on ALL other
+  devices.
+* **Mechanism:**
     - [x] The UI has a checkbox "Render Locally".
     - [x] If the checkbox is checked, clicking a visualization navigates the local `WebView` to the
       content's `index.html`.

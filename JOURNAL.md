@@ -168,22 +168,22 @@ We will split the existing `NearbyConnectionsManager` into two distinct classes:
 
 1. **`NearbyConnectionsManager` (Refactored):**
 
-   - This class will be responsible *only* for the direct interactions with the
-     `com.google.android.gms.nearby.connection` API.
-   - It will manage the connection lifecycle, advertising, discovery, and payload transfers.
-   - It will hold a reference to a `TopologyOptimizer` and will consult it when making decisions.
-   - It will not contain any logic specific to the "snake" topology (e.g., reshuffling, connection
-     count rules).
+    - This class will be responsible *only* for the direct interactions with the
+      `com.google.android.gms.nearby.connection` API.
+    - It will manage the connection lifecycle, advertising, discovery, and payload transfers.
+    - It will hold a reference to a `TopologyOptimizer` and will consult it when making decisions.
+    - It will not contain any logic specific to the "snake" topology (e.g., reshuffling, connection
+      count rules).
 
 2. **`TopologyOptimizer` (New Class):**
 
-   - This class will contain all the high-level logic for maintaining the desired mesh topology.
-   - It will be responsible for the "reshuffling" logic.
-   - It will provide decision-making methods like
-     `shouldConnectTo(endpointId, theirConnectionCount)` and `selectEndpointToDisconnect()`.
-   - **Crucially, this class will have no `import` statements
-     from `com.google.android.gms.nearby.connection`.** It will work with pure data types (Strings,
-     Ints, Maps).
+    - This class will contain all the high-level logic for maintaining the desired mesh topology.
+    - It will be responsible for the "reshuffling" logic.
+    - It will provide decision-making methods like
+      `shouldConnectTo(endpointId, theirConnectionCount)` and `selectEndpointToDisconnect()`.
+    - **Crucially, this class will have no `import` statements
+      from `com.google.android.gms.nearby.connection`.** It will work with pure data types (Strings,
+      Ints, Maps).
 
 ## List of Changes
 

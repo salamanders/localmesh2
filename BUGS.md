@@ -3,7 +3,10 @@
 ---
 Severity: High
 State: Open
-Description: Devices are failing to connect to discovered endpoints, with the error `STATUS_ENDPOINT_UNKNOWN`. This appears to be a race condition where the endpoint is lost between discovery and the connection request. This bug is likely related to the "unknown distance" bug, as the failure to connect prevents the distance from ever being calculated.
+Description: Devices are failing to connect to discovered endpoints, with the error
+`STATUS_ENDPOINT_UNKNOWN`. This appears to be a race condition where the endpoint is lost between
+discovery and the connection request. This bug is likely related to the "unknown distance" bug, as
+the failure to connect prevents the distance from ever being calculated.
 Location in Code: `NearbyConnectionsManager.kt`
 Attempts:
 
@@ -12,13 +15,18 @@ Attempts:
 ---
 Severity: High
 State: Open
-Description: One of the devices in the test group, `6AYQn`, is not connecting to more than one peer. The investigation revealed that other devices are receiving gossip from `6AYQn`, but they are all reporting "Received gossip from endpoint 6AYQn with unknown distance, cannot process." While the `distance` field was added to `NetworkMessage` to address this, the underlying connection issue (`STATUS_ENDPOINT_UNKNOWN`) is preventing the distance from being used.
+Description: One of the devices in the test group, `6AYQn`, is not connecting to more than one peer.
+The investigation revealed that other devices are receiving gossip from `6AYQn`, but they are all
+reporting "Received gossip from endpoint 6AYQn with unknown distance, cannot process." While the
+`distance` field was added to `NetworkMessage` to address this, the underlying connection issue (
+`STATUS_ENDPOINT_UNKNOWN`) is preventing the distance from being used.
 Location in Code: `NetworkMessage.kt`, `NearbyConnectionsManager.kt`
 Attempts:
 
 - 2025-10-27: Inspected the logs from all 6 devices and found the "unknown distance" warning.
 - 2025-10-27: Examined `NetworkMessage.kt` and discovered that it does not have a `distance` field.
-- 2025-10-27: Added a `distance` field to `NetworkMessage.kt` and updated `NearbyConnectionsManager.kt` to populate and use it. This did not resolve the connection issue.
+- 2025-10-27: Added a `distance` field to `NetworkMessage.kt` and updated
+  `NearbyConnectionsManager.kt` to populate and use it. This did not resolve the connection issue.
 
 ---
 Severity: High
@@ -37,14 +45,24 @@ Attempts:
 ---
 Severity: High
 State: Closed
-Description: Gossip messages are not re-broadcast. The `payloadCallback` in `NearbyConnectionsManager.kt` processes incoming `GOSSIP` messages but does not forward them to other connected peers. This severely limits the network's ability to build a complete topology map, as information about distant nodes (more than one hop away) is never propagated. This will prevent network-wide broadcasts, such as the "display" command, from reaching all 20 devices.
-Resolution: This issue was resolved by refactoring the `onPayloadReceived` method to unconditionally rebroadcast all incoming messages to all connected peers, except for the original sender. A new helper function, `sendToAll`, was created to consolidate the sending logic and reduce code duplication.
+Description: Gossip messages are not re-broadcast. The `payloadCallback` in
+`NearbyConnectionsManager.kt` processes incoming `GOSSIP` messages but does not forward them to
+other connected peers. This severely limits the network's ability to build a complete topology map,
+as information about distant nodes (more than one hop away) is never propagated. This will prevent
+network-wide broadcasts, such as the "display" command, from reaching all 20 devices.
+Resolution: This issue was resolved by refactoring the `onPayloadReceived` method to unconditionally
+rebroadcast all incoming messages to all connected peers, except for the original sender. A new
+helper function, `sendToAll`, was created to consolidate the sending logic and reduce code
+duplication.
 Location in Code: `app/src/main/java/info/benjaminhill/localmesh2/NearbyConnectionsManager.kt`
 
 ---
 Severity: Medium
 State: Open
-Description: The `get` function in `EndpointRegistry.kt` does not update the `lastUpdatedTs` timestamp for existing `Endpoint` objects. This can lead to the `reshuffle` logic in `NearbyConnectionsManager.kt` making decisions based on stale data, potentially causing it to disconnect from active peers or fail to connect to new ones.
+Description: The `get` function in `EndpointRegistry.kt` does not update the `lastUpdatedTs`
+timestamp for existing `Endpoint` objects. This can lead to the `reshuffle` logic in
+`NearbyConnectionsManager.kt` making decisions based on stale data, potentially causing it to
+disconnect from active peers or fail to connect to new ones.
 Location in Code: `app/src/main/java/info/benjaminhill/localmesh2/EndpointRegistry.kt`
 
 ---
@@ -178,8 +196,13 @@ Attempts:
 ---
 Severity: High
 State: Open
-Description: The P2P network is unstable, with frequent disconnections and payload transfer failures across all devices.
+Description: The P2P network is unstable, with frequent disconnections and payload transfer failures
+across all devices.
 Location in Code: `app/src/main/java/info/benjaminhill/localmesh2/NearbyConnectionsManager.kt`
 Attempts:
+
 - 2025-10-27:
-    - Hypothesis: The frequent and unnecessary advertising restarts, along with the aggressive connection churning in `onConnectionInitiated`, are causing the `SOCKET_CLOSED` and `L2CAP_FETCH_ADVERTISEMENT_FAILED` errors. The frequent gossip and reshuffle jobs are exacerbating the problem by creating excessive network traffic.
+    - Hypothesis: The frequent and unnecessary advertising restarts, along with the aggressive
+      connection churning in `onConnectionInitiated`, are causing the `SOCKET_CLOSED` and
+      `L2CAP_FETCH_ADVERTISEMENT_FAILED` errors. The frequent gossip and reshuffle jobs are
+      exacerbating the problem by creating excessive network traffic.

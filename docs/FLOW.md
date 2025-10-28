@@ -24,7 +24,8 @@ optimized.
 3. **First Discovery:** `NewNode`'s `endpointDiscoveryCallback` in `NearbyConnectionsManager` is
    triggered when it finds `Node1`. The callback delegates the decision to the
    `TopologyOptimizer`. Since `NewNode` has no connections, the distance to `Node1` is considered
-   infinite. The `TopologyOptimizer` determines that the condition to initiate a connection (`distance > 2`)
+   infinite. The `TopologyOptimizer` determines that the condition to initiate a connection (
+   `distance > 2`)
    is met. #QA:OK
 
 4. **Connection Request to a Full Node:** The `TopologyOptimizer` instructs the
@@ -128,7 +129,8 @@ have a stable view of the network topology. #QA:OK
 5. **First Hop Reception & Processing (`NewNode`):**
     * `NewNode` receives the message from `Node1`. The `onPayloadReceived` callback in
       `NearbyConnectionsManager` is triggered. #QA:OK
-    * Inside this callback, the code first checks the message ID against its `seenMessageIds` map. The ID
+    * Inside this callback, the code first checks the message ID against its `seenMessageIds` map.
+      The ID
       is new, so it is added to the map and the message is processed. #QA:OK
     * The code then inspects the `messageType`. In this case, it's a `DISPLAY` message, so the
       `WebAppActivity.navigateTo("disco")` function is called. If it had been a `GOSSIP` message,
@@ -139,10 +141,12 @@ have a stable view of the network topology. #QA:OK
       #QA:OK
 
 6. **Universal Message Re-broadcast:**
-    * After processing the payload, the `onPayloadReceived` function unconditionally re-broadcasts the
+    * After processing the payload, the `onPayloadReceived` function unconditionally re-broadcasts
+      the
       message (with an incremented hop count) to all of its peers except for the original sender
       (`Node1`). #QA:OK
-    * This logic is now universal for all message types, ensuring both `DISPLAY` commands and `GOSSIP`
+    * This logic is now universal for all message types, ensuring both `DISPLAY` commands and
+      `GOSSIP`
       updates propagate through the network using the same efficient flooding mechanism. #QA:OK
 
 7. **Subsequent Hops & Loop Prevention:**

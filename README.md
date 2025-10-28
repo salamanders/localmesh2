@@ -1,6 +1,7 @@
 <!-- ![Local Mesh Icon](https://raw.githubusercontent.com/salamanders/localmesh2/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp) -->
 
 # LocalMesh
+
 A simple local mesh network for rapid prototyping
 
 **LocalMesh** creates a private, peer-to-peer network with nearby devices, allowing you to chat,

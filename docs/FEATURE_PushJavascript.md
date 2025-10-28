@@ -46,41 +46,38 @@ The implementation will consist of the following changes:
 - [ ] Build and test the new push-based update mechanism.
 - [ ] Delete `docs/FEATURE_PushJavascript.md`.
 
-
-
-
 // Instead of this, we are using JavaScriptInjectedAndroid
-//                    override fun shouldInterceptRequest(
-//                        view: WebView?,
-//                        request: WebResourceRequest?
+// override fun shouldInterceptRequest(
+// view: WebView?,
+// request: WebResourceRequest?
 //                    ): WebResourceResponse? {
 //
-//                        val url = request?.url.toString()
+// val url = request?.url.toString()
 //
-//                        // Check if the URL is the one we want to intercept
-//                        if (url.endsWith("/getStatus")) {
-//                            // 1. Generate your dynamic JSON
-//                            val json = """
-//                                {
+// // Check if the URL is the one we want to intercept
+// if (url.endsWith("/getStatus")) {
+// // 1. Generate your dynamic JSON
+// val json = """
+// {
 //                                    "status": "Online (from intercept)",
 //                                    "battery": 85,
 //                                    "timestamp": ${System.currentTimeMillis()}
-//                                }
+// }
 //                            """.trimIndent()
 //
-//                            // 2. Create an InputStream from the JSON string
-//                            val dataStream = json.byteInputStream()
+// // 2. Create an InputStream from the JSON string
+// val dataStream = json.byteInputStream()
 //
-//                            // 3. Return a WebResourceResponse
-//                            // This tricks the WebView into thinking it just
-//                            // loaded this data from a file or server.
-//                            return WebResourceResponse(
+// // 3. Return a WebResourceResponse
+// // This tricks the WebView into thinking it just
+// // loaded this data from a file or server.
+// return WebResourceResponse(
 //                                "application/json", // The MIME type
-//                                "utf-8",             // The encoding
-//                                dataStream           // The data
+//                                "utf-8", // The encoding
+// dataStream // The data
 //                            )
-//                        }
+// }
 //
-//                        // For all other requests, let the WebView handle it normally
-//                        return super.shouldInterceptRequest(view, request)
-//                    }
+// // For all other requests, let the WebView handle it normally
+// return super.shouldInterceptRequest(view, request)
+// }

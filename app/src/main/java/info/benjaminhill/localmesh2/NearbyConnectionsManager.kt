@@ -155,10 +155,9 @@ object NearbyConnectionsManager {
                             ).immediatePeerIds = it
                         }
 
-                        // Update distances based on the received message
+                        // Update distances based on the received message.  Trustworthy, so ok to update TS.
                         receivedMessage.distance.forEach { (endpointId, distance) ->
-                            val endpoint =
-                                EndpointRegistry.get(endpointId, autoUpdateTs = false)
+                            val endpoint = EndpointRegistry.get(endpointId, autoUpdateTs = true)
                             val newDistance = distance + 1
                             if ((endpoint.distance ?: Int.MAX_VALUE) > newDistance) {
                                 endpoint.distance = newDistance
@@ -276,7 +275,6 @@ object NearbyConnectionsManager {
         ) {
             TopologyOptimizer.onEndpointFound(endpointId)
         }
-
 
 
         override fun onEndpointLost(endpointId: String) {

@@ -18,9 +18,9 @@ data class NetworkMessage(
     // Network Topology
     /** The number of hops this message has taken. */
     val hopCount: Int = 0,
-    /** Immediate peers of the originator */
+    /** Immediate peers of the originator.  Semi-trustworthy, may be outdated. */
     val peers: Set<String>,
-    /** Key: endpointId, value: distance */
+    /** Key: endpointId, value: distance.  Totally trustworthy, just real peers. */
     val distance: Map<String, Int>,
     /** Per-Type optional fields */
     val displayTarget: String? = null,
