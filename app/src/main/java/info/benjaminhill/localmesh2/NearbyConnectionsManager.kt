@@ -125,7 +125,8 @@ object NearbyConnectionsManager {
 
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
-            EndpointRegistry.get(endpointId, autoUpdateTs = true)
+            val endpoint = EndpointRegistry.get(endpointId, autoUpdateTs = true)
+            endpoint.transferFailureCount = 0
             if (payload.type == Payload.Type.BYTES) {
                 val receivedMessage = NetworkMessage.fromByteArray(payload.asBytes()!!)
 
@@ -194,32 +195,35 @@ object NearbyConnectionsManager {
         }
 
         override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {
+            val endpoint = EndpointRegistry.get(endpointId, autoUpdateTs = false)
             when (update.status) {
-                // TODO: Repeated failed payloads to a peer node means the node is no longer connected to you.
-                
-                PayloadTransferUpdate.Status.SUCCESS ->
+                PayloadTransferUpdate.Status.SUCCESS -> {
+                    endpoint.transferFailureCount = 0
                     Log.i(
                         TAG,
                         "SUCCESS: Payload ${update.payloadId} transfer to $endpointId complete."
                     )
+                }
 
-                PayloadTransferUpdate.Status.FAILURE ->
-                    Log.e(
-                        TAG,
-                        "FAILURE: Payload ${update.payloadId} transfer to $endpointId failed."
-                    )
-
-                PayloadTransferUpdate.Status.CANCELED ->
-                    Log.w(
-                        TAG,
-                        "CANCELED: Payload ${update.payloadId} transfer to $endpointId was canceled."
-                    )
+                PayloadTransferUpdate.Status.FAILURE,
+                PayloadTransferUpdate.Status.CANCELED -> {
+                    endpoint.transferFailureCount++
+                    val reason = if (update.status == PayloadTransferUpdate.Status.FAILURE) "failed" else "canceled"
+                    when (endpoint.transferFailureCount) {
+                        1 -> Log.i(TAG,"Payload transfer to $endpointId $reason. This is the first failure.")
+                        2 -> Log.w(TAG,"Payload transfer to $endpointId $reason. This is the second failure.")
+                        3 -> {
+                            Log.e(TAG,"Payload transfer to $endpointId $reason. This is the third failure. Disconnecting.")
+                            disconnectFromEndpoint(endpointId)
+                            EndpointRegistry.remove(endpointId)
+                        }
+                    }
+                }
 
                 PayloadTransferUpdate.Status.IN_PROGRESS -> {
                     // Ignoring for now to keep logs clean. This is where you'd update a progress bar.
                 }
             }
-
         }
     }
 
