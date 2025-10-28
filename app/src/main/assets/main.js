@@ -1,4 +1,5 @@
 const deviceIdSpan = document.getElementById('device-id');
+const deviceRoleSpan = document.getElementById('device-role');
 const peerCountSpan = document.getElementById('peer-count');
 const peersList = document.getElementById('peers');
 const foldersList = document.getElementById('folders');
@@ -10,48 +11,35 @@ async function updateStatus() {
         console.info('Got status', JSON.stringify(status));
 
         deviceIdSpan.textContent = status.id || '...';
+        if (deviceRoleSpan) {
+            deviceRoleSpan.textContent = status.role || '...';
+        }
 
-        // Update Peer List
-        const peerMap = status.peers; // e.g., {"peer1":1, "peer2":2, "peer3":null}
-        const peerDistances = Object.values(peerMap);
+        peerCountSpan.textContent = status.peers.length;
 
-        const immediatePeers = peerDistances.filter(d => d === 1).length;
-        const distantPeers = peerDistances.filter(d => d > 1).length;
-        const totalPeers = Object.keys(peerMap).length;
-
-        peerCountSpan.textContent = `${immediatePeers}:${distantPeers}:${totalPeers}`;
-//        peersList.innerHTML = ''; // Clear existing list
-//
-//        newPeerIds.sort().forEach(id => {
-//            const li = document.createElement('li');
-//            // Display the peer ID and its distance
-//            li.textContent = `${id} (distance: ${peerMap[id]})`;
-//            li.dataset.peerId = id;
-//            peersList.appendChild(li);
-//        });
-
-
-        // Update folder list (visualizations)
-        const contentFolders = status.visualizations;
-        foldersList.innerHTML = '';
-        contentFolders.toSorted().forEach(folder => {
-            const li = document.createElement('li');
-            li.textContent = folder;
-            li.addEventListener('click', () => {
-                const renderLocally = document.getElementById('renderLocally').checked;
-                if (renderLocally) {
-                    if (folder == 'camera') {
-                        Android.sendPeerDisplayCommand('slideshow');
-                        window.location.href = 'camera/index.html';
+        if (foldersList) {
+            // Update folder list (visualizations)
+            const contentFolders = status.visualizations;
+            foldersList.innerHTML = '';
+            contentFolders.toSorted().forEach(folder => {
+                const li = document.createElement('li');
+                li.textContent = folder;
+                li.addEventListener('click', () => {
+                    const renderLocally = document.getElementById('renderLocally').checked;
+                    if (renderLocally) {
+                        if (folder == 'camera') {
+                            Android.sendPeerDisplayCommand('slideshow');
+                            window.location.href = 'camera/index.html';
+                        } else {
+                            window.location.href = folder + '/index.html';
+                        }
                     } else {
-                        window.location.href = folder + '/index.html';
+                        Android.sendPeerDisplayCommand(folder);
                     }
-                } else {
-                    Android.sendPeerDisplayCommand(folder);
-                }
+                });
+                foldersList.appendChild(li);
             });
-            foldersList.appendChild(li);
-        });
+        }
     } catch (e) {
         console.error('Failed to fetch status:', e);
     }

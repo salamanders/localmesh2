@@ -13,15 +13,8 @@ data class NetworkMessage(
     /** The node that initially injected this message into the network */
     val sendingNodeId: String,
     /** Type of command (gossip, display, do, etc) */
-    val messageType: Types = Types.GOSSIP,
+    val messageType: Types = Types.DISPLAY,
 
-    // Network Topology
-    /** The number of hops this message has taken. */
-    val hopCount: Int = 0,
-    /** Immediate peers of the originator.  Semi-trustworthy, may be outdated. */
-    val peers: Set<String>,
-    /** Key: endpointId, value: distance.  Totally trustworthy, just real peers. */
-    val distance: Map<String, Int>,
     /** Per-Type optional fields */
     val displayTarget: String? = null,
 ) {
@@ -29,7 +22,6 @@ data class NetworkMessage(
 
     companion object {
         enum class Types {
-            GOSSIP,
             DISPLAY,
         }
 

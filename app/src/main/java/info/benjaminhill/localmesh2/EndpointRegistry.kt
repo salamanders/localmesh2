@@ -14,7 +14,6 @@ object EndpointRegistry {
             Endpoint(
                 id = endpointId,
                 lastUpdatedTs = System.currentTimeMillis(),
-                distance = null,
             )
         }
         if (autoUpdateTs) {
@@ -32,7 +31,7 @@ object EndpointRegistry {
 
     // Immediate peers
     fun getDirectlyConnectedEndpoints(): Set<Endpoint> =
-        getAllKnownEndpoints().filter { it.distance == 1 }.toSet()
+        getAllKnownEndpoints()
 
     private const val TAG = "P2P"
 }
