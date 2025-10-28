@@ -30,8 +30,8 @@ object NearbyConnectionsManager {
     private const val TAG = "P2P"
     private const val SERVICE_ID = "info.benjaminhill.localmesh2"
 
-    // The hardware seems to be ok up to 5 connections
-    internal const val MAX_CONNECTIONS = 5
+    // The hardware seems to be ok up to 7 connections, but we want to leave some room for inbound.
+    internal const val MAX_CONNECTIONS = 6
 
     // Strategy.P2P_CLUSTER is used as it supports M-to-N connections,
     // which is suitable for a dynamic snake topology where multiple
@@ -226,7 +226,7 @@ object NearbyConnectionsManager {
                         else -> {
                             Log.e(TAG,"Payload transfer to $endpointId $reason. This is the ${endpoint.transferFailureCount} failure. Disconnecting.")
                             disconnectFromEndpoint(endpointId)
-                            EndpointRegistry.remove(endpointId)
+                            endpoint.distance = null
                         }
                     }
                 }
@@ -296,9 +296,9 @@ object NearbyConnectionsManager {
 
 
         override fun onEndpointLost(endpointId: String) {
-            // TODO: This may be too much logging now that we manually stop and restart advertising.
+            // No longer removing endpoints from the registry when they are lost.
+            // Let them live forever.
             Log.i(TAG, "Endpoint lost: $endpointId")
-            EndpointRegistry.remove(endpointId)
         }
     }
 
@@ -328,6 +328,18 @@ object NearbyConnectionsManager {
                 if (resolution.status.isSuccess) {
                     Log.i(TAG, "Successfully connected to $endpointId")
                     endpoint.distance = 1
+
+                    // Immediately share our network state with the new peer
+                    val gossipMessage = NetworkMessage(
+                        sendingNodeId = localId,
+                        messageType = NetworkMessage.Companion.Types.GOSSIP,
+                        peers = EndpointRegistry.getDirectlyConnectedEndpoints()
+                            .map { it.id }.toSet(),
+                        distance = EndpointRegistry.getAllKnownEndpoints()
+                            .filter { it.distance != null }
+                            .associate { it.id to it.distance!! },
+                    )
+                    broadcastInternal(gossipMessage)
                 } else {
                     Log.w(
                         TAG,
