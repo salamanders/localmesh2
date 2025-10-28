@@ -32,7 +32,7 @@ class JavaScriptInjectedAndroid(private val context: Context) {
         Status(
             visualizations = visualizations,
             id = CachedPrefs.getId(context),
-            peers = EndpointRegistry.getDirectlyConnectedEndpoints()
+            peers = EndpointRegistry.getAllKnownEndpoints()
                 .associate { it.id to it.distance },
             timestamp = System.currentTimeMillis()
         )

@@ -10,14 +10,19 @@ import java.util.UUID
 data class NetworkMessage(
     /** A unique identifier for this message to prevent broadcast loops. */
     val messageId: String = UUID.randomUUID().toString(),
-    /** The number of hops this message has taken. */
-    val hopCount: Int = 0,
     /** The node that initially injected this message into the network */
     val sendingNodeId: String,
     /** Type of command (gossip, display, do, etc) */
     val messageType: Types = Types.GOSSIP,
-    /** Optional content of the message */
-    val peers: Set<String>? = null,
+
+    // Network Topology
+    /** The number of hops this message has taken. */
+    val hopCount: Int = 0,
+    /** Immediate peers of the originator */
+    val peers: Set<String>,
+    /** Key: endpointId, value: distance */
+    val distance: Map<String, Int>,
+    /** Per-Type optional fields */
     val displayTarget: String? = null,
 ) {
     fun toByteArray(): ByteArray = Cbor.encodeToByteArray(serializer(), this)

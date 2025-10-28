@@ -3,6 +3,26 @@
 ---
 Severity: High
 State: Open
+Description: Devices are failing to connect to discovered endpoints, with the error `STATUS_ENDPOINT_UNKNOWN`. This appears to be a race condition where the endpoint is lost between discovery and the connection request. This bug is likely related to the "unknown distance" bug, as the failure to connect prevents the distance from ever being calculated.
+Location in Code: `NearbyConnectionsManager.kt`
+Attempts:
+
+- 2025-10-27: Analyzed logs for device `6AYQn` and discovered the `STATUS_ENDPOINT_UNKNOWN` error.
+
+---
+Severity: High
+State: Open
+Description: One of the devices in the test group, `6AYQn`, is not connecting to more than one peer. The investigation revealed that other devices are receiving gossip from `6AYQn`, but they are all reporting "Received gossip from endpoint 6AYQn with unknown distance, cannot process." While the `distance` field was added to `NetworkMessage` to address this, the underlying connection issue (`STATUS_ENDPOINT_UNKNOWN`) is preventing the distance from being used.
+Location in Code: `NetworkMessage.kt`, `NearbyConnectionsManager.kt`
+Attempts:
+
+- 2025-10-27: Inspected the logs from all 6 devices and found the "unknown distance" warning.
+- 2025-10-27: Examined `NetworkMessage.kt` and discovered that it does not have a `distance` field.
+- 2025-10-27: Added a `distance` field to `NetworkMessage.kt` and updated `NearbyConnectionsManager.kt` to populate and use it. This did not resolve the connection issue.
+
+---
+Severity: High
+State: Open
 Description: One of the devices in the test group, `6ZwRq` (device ID `9B071FFAZ0018X`), is not
 connecting to more than one peer. The investigation revealed that the app on this device is not
 advertising itself on the network because the `startMesh()` function in `MainActivity.kt` is not
@@ -121,7 +141,7 @@ Attempts:
                `NearbyConnectionsManager.stop()` from it. Also add a log statement to `onDestroy()`.
             3. Build and deploy the app.
             4. Examine the logcat for the new `stop()` and `onDestroy()` messages, and to see if the
-               `STATUS_ALREADY_CONNECTED_to_ENDPOINT` errors are resolved.
+               `STATUS_ALREADY_CONNECTED_TO_ENDPOINT` errors are resolved.
     7. **Fix: App Shutdown Race Condition**:
         * **Observation**: The logs from the previous experiment showed that
           `MainActivity.onDestroy()` and `NearbyConnectionsManager.stop()` were being called almost
@@ -137,7 +157,7 @@ Attempts:
         * **Conclusion**: The "Immediate Disconnect" bug was two separate issues:
             1. **"Endpoint Lost" Storm**: Caused by changing the advertised endpoint name. Resolved
                by using a stable name.
-            2. **`STATUS_ALREADY_CONNECTED_TO_ENDPOINT` Errors**: Caused by lingering connections
+            2. **`STATUS_ALREADY_CONNECTED_to_ENDPOINT` Errors**: Caused by lingering connections
                from previous app launches. Resolved by calling `stopAllEndpoints()` when the app
                exits.
         * **Final State**: The immediate disconnect issue is resolved. The app is now stable. The
@@ -154,3 +174,12 @@ Attempts:
 * **Attempts**:
     1. Inspected `JavaScriptInjectedAndroid.kt` and found that the `getStatus()` method returns a
        hardcoded JSON string with 3 dummy peers.
+
+---
+Severity: High
+State: Open
+Description: The P2P network is unstable, with frequent disconnections and payload transfer failures across all devices.
+Location in Code: `app/src/main/java/info/benjaminhill/localmesh2/NearbyConnectionsManager.kt`
+Attempts:
+- 2025-10-27:
+    - Hypothesis: The frequent and unnecessary advertising restarts, along with the aggressive connection churning in `onConnectionInitiated`, are causing the `SOCKET_CLOSED` and `L2CAP_FETCH_ADVERTISEMENT_FAILED` errors. The frequent gossip and reshuffle jobs are exacerbating the problem by creating excessive network traffic.

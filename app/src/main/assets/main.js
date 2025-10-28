@@ -12,10 +12,14 @@ async function updateStatus() {
         deviceIdSpan.textContent = status.id || '...';
 
         // Update Peer List
-        const peerMap = status.peers; // e.g., {"peer1":1, "peer2":1}
-        const newPeerIds = Object.keys(peerMap);
+        const peerMap = status.peers; // e.g., {"peer1":1, "peer2":2, "peer3":null}
+        const peerDistances = Object.values(peerMap);
 
-        peerCountSpan.textContent = newPeerIds.length;
+        const immediatePeers = peerDistances.filter(d => d === 1).length;
+        const distantPeers = peerDistances.filter(d => d > 1).length;
+        const totalPeers = Object.keys(peerMap).length;
+
+        peerCountSpan.textContent = `${immediatePeers}:${distantPeers}:${totalPeers}`;
 //        peersList.innerHTML = ''; // Clear existing list
 //
 //        newPeerIds.sort().forEach(id => {

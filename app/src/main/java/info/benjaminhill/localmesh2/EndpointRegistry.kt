@@ -23,6 +23,10 @@ object EndpointRegistry {
         return endpoint
     }
 
+    fun remove(endpointId: String) {
+        allEndpoints.remove(endpointId)
+    }
+
     // All peers.  Shallow copy, so edits are ok.
     fun getAllKnownEndpoints(): Set<Endpoint> = allEndpoints.values.toSet()
 
