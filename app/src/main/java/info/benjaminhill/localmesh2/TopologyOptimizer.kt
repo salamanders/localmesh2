@@ -26,7 +26,9 @@ object TopologyOptimizer {
     private lateinit var purgeJob: Job
     private lateinit var ensureConnectionsJob: Job
 
-    /** A set of peers that are available for connection. */
+    /** A set of peers that are available for connection.
+     * TODO: Is this the same as EndpointRegistry with distance = null?
+     */
     private val availablePeers = ConcurrentHashMap.newKeySet<String>()
     private var clearedAfterFirstConnection = false
 

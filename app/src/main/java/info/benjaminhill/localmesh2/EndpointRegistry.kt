@@ -8,7 +8,7 @@ object EndpointRegistry {
     private val allEndpoints: MutableMap<String, Endpoint> = ConcurrentHashMap()
 
     /** Gets an existing endpoint or creates a new one, logging its creation. Always updates the ts */
-    fun get(endpointId: String, autoUpdateTs: Boolean = true): Endpoint {
+    fun get(endpointId: String, autoUpdateTs: Boolean): Endpoint {
         val endpoint = allEndpoints.getOrPut(endpointId) {
             Log.d(TAG, "Creating new endpoint for $endpointId")
             Endpoint(
@@ -29,6 +29,11 @@ object EndpointRegistry {
 
     // All peers.  Shallow copy, so edits are ok.
     fun getAllKnownEndpoints(): Set<Endpoint> = allEndpoints.values.toSet()
+
+    // Clears all endpoints that you are not directly connected to
+    fun clearNonDirectEndpoints() {
+        allEndpoints.values.removeIf { it.distance != 1 }
+    }
 
     // Immediate peers
     fun getDirectlyConnectedEndpoints(): Set<Endpoint> =

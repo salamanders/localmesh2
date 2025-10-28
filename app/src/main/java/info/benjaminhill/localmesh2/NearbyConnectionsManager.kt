@@ -30,6 +30,7 @@ object NearbyConnectionsManager {
     private const val TAG = "P2P"
     private const val SERVICE_ID = "info.benjaminhill.localmesh2"
 
+    // The hardware seems to be ok up to 5 connections
     internal const val MAX_CONNECTIONS = 5
 
     // Strategy.P2P_CLUSTER is used as it supports M-to-N connections,
@@ -48,7 +49,6 @@ object NearbyConnectionsManager {
     private lateinit var scope: CoroutineScope
     private lateinit var localId: String
     private lateinit var messageCleanupJob: Job
-
     private lateinit var connectionsClient: ConnectionsClient
     fun initialize(newContext: Context, newScope: CoroutineScope) {
         appContext = newContext.applicationContext
@@ -99,6 +99,7 @@ object NearbyConnectionsManager {
         messageCleanupJob.cancel()
         TopologyOptimizer.stop()
         connectionsClient.stopAllEndpoints()
+        connectionsClient.stopDiscovery()
     }
 
 
@@ -194,6 +195,8 @@ object NearbyConnectionsManager {
 
         override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {
             when (update.status) {
+                // TODO: Repeated failed payloads to a peer node means the node is no longer connected to you.
+                
                 PayloadTransferUpdate.Status.SUCCESS ->
                     Log.i(
                         TAG,
@@ -221,7 +224,7 @@ object NearbyConnectionsManager {
     }
 
     internal fun requestConnection(endpointId: String) {
-        val endpoint = EndpointRegistry.get(endpointId)
+        val endpoint = EndpointRegistry.get(endpointId, autoUpdateTs = true)
         Log.i(TAG, "Requesting connection to $endpointId")
         connectionsClient.requestConnection(localId, endpointId, connectionLifecycleCallback)
             .addOnSuccessListener {
@@ -288,7 +291,7 @@ object NearbyConnectionsManager {
             override fun onConnectionInitiated(
                 endpointId: String, connectionInfo: ConnectionInfo
             ) {
-                val endpoint = EndpointRegistry.get(endpointId)
+                val endpoint = EndpointRegistry.get(endpointId, autoUpdateTs = true)
                 Log.d(TAG, "onConnectionInitiated from ${endpoint.id}")
                 if (EndpointRegistry.getDirectlyConnectedEndpoints().size >= MAX_CONNECTIONS) {
                     Log.w(
@@ -305,7 +308,7 @@ object NearbyConnectionsManager {
             override fun onConnectionResult(
                 endpointId: String, resolution: ConnectionResolution
             ) {
-                val endpoint = EndpointRegistry.get(endpointId)
+                val endpoint = EndpointRegistry.get(endpointId, autoUpdateTs = true)
                 if (resolution.status.isSuccess) {
                     Log.i(TAG, "Successfully connected to $endpointId")
                     endpoint.distance = 1
@@ -314,11 +317,8 @@ object NearbyConnectionsManager {
                         TAG,
                         "onConnectionResult failed to connect to $endpointId: ${resolution.status.statusMessage}"
                     )
-                    endpoint.distance?.let { dist ->
-                        if (dist < 2) {
-                            endpoint.distance = null
-                        }
-                    }
+                    // Assume the worst, remove it from the registry.
+                    EndpointRegistry.remove(endpointId)
                 }
             }
 
