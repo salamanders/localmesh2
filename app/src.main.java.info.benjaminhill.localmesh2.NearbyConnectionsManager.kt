@@ -32,9 +32,6 @@ object NearbyConnectionsManager {
 
     internal const val MAX_CONNECTIONS_HARDWARE_LIMIT = 7
 
-    // Strategy.P2P_CLUSTER is used as it supports M-to-N connections,
-    // which is suitable for a dynamic snake topology where multiple
-    // endpoints can be discovering or advertising simultaneously.
     private val DISCOVERY_OPTIONS =
         DiscoveryOptions.Builder().setStrategy(Strategy.P2P_CLUSTER).build()
 
@@ -276,8 +273,6 @@ object NearbyConnectionsManager {
         ) {
             TopologyOptimizer.onEndpointFound(endpointId)
         }
-
-
 
         override fun onEndpointLost(endpointId: String) {
             Log.i(TAG, "Endpoint lost: $endpointId")

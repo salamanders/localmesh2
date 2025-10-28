@@ -17,42 +17,48 @@ optimized.
    connections, meaning its connection slots are full. #QA:OK
 
 2. **NewNode Startup:** A new node, `NewNode`, starts the application. The
-   `NearbyConnectionsManager` is initialized. `NewNode` begins advertising its presence and
-   simultaneously discovering other nodes in the vicinity. #QA:OK
+   `NearbyConnectionsManager` is initialized, which in turn initializes the `TopologyOptimizer`.
+   `NewNode` begins advertising its presence and simultaneously discovering other nodes in the
+   vicinity. #QA:OK
 
-3. **First Discovery:** `NewNode`'s discovery callback is triggered when it finds `Node1`. Since
-   `NewNode` has no connections, the distance to `Node1` is considered infinite. The condition to
-   initiate a connection (`distance > 2`) is met. #QA:OK
+3. **First Discovery:** `NewNode`'s `endpointDiscoveryCallback` in `NearbyConnectionsManager` is
+   triggered when it finds `Node1`. The callback delegates the decision to the
+   `TopologyOptimizer`. Since `NewNode` has no connections, the distance to `Node1` is considered
+   infinite. The `TopologyOptimizer` determines that the condition to initiate a connection (`distance > 2`)
+   is met. #QA:OK
 
-4. **Connection Request to a Full Node:** `NewNode` sends a connection request to `Node1`. #QA:OK
+4. **Connection Request to a Full Node:** The `TopologyOptimizer` instructs the
+   `NearbyConnectionsManager` to send a connection request to `Node1`. #QA:OK
 
-5. **`findRedundantPeer` Triggered:** `Node1` receives the request but already has 7 connections (
-   its limit). Instead of rejecting the connection, it invokes the `findRedundantPeer()` function to
-   make room. It examines its directly connected peers and finds that they are all at a distance of
-    1. It will select one of them to disconnect from. For this example, we'll assume it chooses to
-       disconnect from `Node8`. #QA:OK
+5. **`findRedundantPeer` Triggered:** `Node1`'s `NearbyConnectionsManager` receives the request, but
+   already has 7 connections (its limit). The `connectionLifecycleCallback` delegates to the
+   `TopologyOptimizer`'s `findRedundantPeer()` function to make room. It examines its directly
+   connected peers and finds that they are all at a distance of 1. It will select one of them to
+   disconnect from. For this example, we'll assume it chooses to disconnect from `Node8`. #QA:OK
 
 6. **Connection Shift:**
-    * `Node1` disconnects from `Node8`. `Node1`'s connection count drops to 6; `Node8`'s also drops
-      to 6. #QA:OK
-    * `Node1` accepts the incoming connection from `NewNode`. `Node1`'s connection count returns to
-      7; `NewNode`'s is now 1. #QA:OK
+    * `Node1`'s `TopologyOptimizer` instructs its `NearbyConnectionsManager` to disconnect from
+      `Node8`. `Node1`'s connection count drops to 6; `Node8`'s also drops to 6. #QA:OK
+    * `Node1`'s `NearbyConnectionsManager` accepts the incoming connection from `NewNode`. `Node1`'s
+      connection count returns to 7; `NewNode`'s is now 1. #QA:OK
 
 7. **Concurrent Connection Attempts & Race Condition:**
     * While the connection to `Node1` was being established, `NewNode` continued discovering other
-      nodes. It may attempt to connect to `Node2` and `Node3` simultaneously. #QA:OK
-    * `Node2` and `Node3` will undergo the same `findRedundantPeer` process. This introduces a
-      potential race condition. For example, `Node2` might decide to drop its connection to `Node1`
-      at the same time `Node1` is dropping its connection to `Node8`. This documentation highlights
-      this as a potential area for further investigation to ensure network stability. #QA:OK
+      nodes. Its `TopologyOptimizer` may attempt to connect to `Node2` and `Node3` simultaneously.
+      #QA:OK
+    * `Node2` and `Node3` will undergo the same `findRedundantPeer` process, managed by their
+      respective `TopologyOptimizer` instances. This introduces a potential race condition. For
+      example, `Node2` might decide to drop its connection to `Node1` at the same time `Node1` is
+      dropping its connection to `Node8`. This documentation highlights this as a potential area for
+      further investigation to ensure network stability. #QA:OK
 
 8. **Network State after Initial Connections:**
     * `NewNode`: Connected to `Node1`, `Node2`, and `Node3`. (3 connections) #QA:OK
     * `Node1`, `Node2`, `Node3`: Each has dropped one of their original peers to connect to
       `NewNode`. (7 connections each) #QA:OK
     * The nodes that were dropped (e.g., `Node8`) now have fewer connections and will use their own
-      `reshuffle()` logic to find and connect to `NewNode`, further integrating it into the mesh.
-      #QA:OK
+      `TopologyOptimizer`'s `reshuffle()` logic to find and connect to `NewNode`, further
+      integrating it into the mesh. #QA:OK
 
 ## Phase 2: Gossip messages reach a steady state
 
@@ -65,12 +71,14 @@ their respective `EndpointRegistry`. #QA:OK
 
 ---
 
-1. **Initial Gossip Exchange:** Within 10 seconds of connecting, `NewNode` and its direct peers (
-   `Node1`, `Node2`, `Node3`) begin exchanging gossip messages. #QA:OK
+1. **Initial Gossip Exchange:** The `TopologyOptimizer` on each node periodically triggers a gossip
+   exchange. `NewNode` and its direct peers (`Node1`, `Node2`, `Node3`) begin exchanging gossip
+   messages. #QA:OK
     * `NewNode` informs its peers about its own connections. #QA:OK
     * `Node1`, `Node2`, and `Node3` each send their full list of peers to `NewNode`. #QA:OK
 
-2. **Registry Update on `NewNode`:** `NewNode` processes the gossip from its peers.
+2. **Registry Update on `NewNode`:** `NewNode`'s `NearbyConnectionsManager` receives the gossip and
+   updates its `EndpointRegistry`.
     * It learns about `Node4` through `Node8` for the first time. #QA:OK
     * It registers these new nodes with a distance of 2 (since they are 1 hop away from its direct
       connections). #QA:OK
@@ -89,7 +97,8 @@ their respective `EndpointRegistry`. #QA:OK
    within 30-60 seconds), the information about `NewNode` and the other connection changes will
    have propagated throughout the entire network. At this point, every node has a complete and
    consistent view of the 9-node network topology. This stable state is crucial for the
-   `reshuffle()` logic on each node to make informed decisions about optimizing connections. #QA:OK
+   `TopologyOptimizer`'s `reshuffle()` logic on each node to make informed decisions about
+   optimizing connections. #QA:OK
 
 ## Phase 3: User-initiated Display Command
 
