@@ -6,8 +6,6 @@ data class Endpoint(
     val id: String,
     // Anything: an advertised peer, a gossip, etc
     var lastUpdatedTs: Long,
-    // 0=self (not included), 1=direct peer, null=unknown
-    var distance: Int?,
     var immediatePeerIds: Set<String>? = null,
     var transferFailureCount: Int = 0,
 )

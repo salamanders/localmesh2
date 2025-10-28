@@ -22,8 +22,8 @@ class JavaScriptInjectedAndroid(private val context: Context) {
     data class Status(
         val visualizations: Set<String>,
         val id: String,
-        // All known peers and distance (if known)
-        val peers: Map<String, Int?>,
+        val role: String,
+        val peers: Set<String>,
         val timestamp: Long,
     )
 
@@ -32,8 +32,8 @@ class JavaScriptInjectedAndroid(private val context: Context) {
         Status(
             visualizations = visualizations,
             id = CachedPrefs.getId(context),
-            peers = EndpointRegistry.getAllKnownEndpoints()
-                .associate { it.id to it.distance },
+            role = RoleManager.role.value.name,
+            peers = EndpointRegistry.getDirectlyConnectedEndpoints().map { it.id }.toSet(),
             timestamp = System.currentTimeMillis()
         )
     )

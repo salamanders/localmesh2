@@ -43,7 +43,7 @@ class MainActivity : ComponentActivity() {
 
         if (allPermissionsGranted) {
             Log.i(TAG, "Permissions already granted, starting mesh.")
-            startMesh()
+            selectRole()
         } else {
             setContent {
                 Column(
@@ -61,14 +61,42 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun selectRole() {
+        setContent {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Button(onClick = {
+                    RoleManager.setRole(Role.HUB)
+                    startMesh()
+                }) {
+                    Text("Become Remote Control")
+                }
+            }
+        }
+        lifecycleScope.launch {
+            delay(10000)
+            if (RoleManager.role.value != Role.HUB) {
+                RoleManager.setRole(Role.LIEUTENANT)
+                startMesh()
+            }
+        }
+    }
+
     private fun startMesh() {
         Log.i(TAG, "Permissions granted, starting service...")
         NearbyConnectionsManager.initialize(this, lifecycleScope)
-        NearbyConnectionsManager.startDiscovery()
-        NearbyConnectionsManager.startAdvertising()
+        NearbyConnectionsManager.start()
+
+        val webAppPath = when (RoleManager.role.value) {
+            Role.HUB -> "index.html"
+            else -> "client.html"
+        }
 
         Intent(this, WebAppActivity::class.java).apply {
-            putExtra(WebAppActivity.EXTRA_PATH, "index.html")
+            putExtra(WebAppActivity.EXTRA_PATH, webAppPath)
         }.also {
             startActivity(it)
         }
