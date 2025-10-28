@@ -1,72 +1,94 @@
-# P2P Network Flow Documentation
+# Network Connection and Message Flows
 
-This document outlines the step-by-step process of a new node joining a mesh
-network using the "Mandate-and-Verify" (or "SlowConnect") algorithm.
+This document details the step-by-step process for key interactions within the STAR topology network.
 
-## Phase 1: New node joins the network
+## Flow 1: PhoneA Becomes the General (Main Hub)
 
-**Start State:** An existing mesh network of any size is running.
+1.  **App Start:** `MainActivity` is launched on PhoneA.
+2.  **UI Choice:** For 10 seconds, a "Become Remote Control" button is displayed.
+3.  **User Action:** The user taps the "Become Remote Control" button.
+4.  **Role Assignment:** PhoneA is now assigned the role of **General**.
+5.  **Start Advertising:**
+    *   The `NearbyConnectionsManager` calls the `startAdvertising()` method from the Google Nearby Connections API.
+    *   **`serviceId`:** `HUB_SERVICE_ID` ("localmesh2-hub-level") is used. This ensures only potential Lieutenants can see this device.
+    *   **`strategy`:** `Strategy.P2P_STAR` is used.
+    *   **`ConnectionLifecycleCallback`:** A callback is provided to handle connection events.
+6.  **Ready State:** PhoneA is now advertising and waiting for Lieutenants to connect. It will accept up to `MAX_LIEUTENANTS` (e.g., 5) connections. Any further incoming requests will be rejected within the `onConnectionInitiated` callback.
 
-**End State:** `NewNode` is integrated into the network with one or two connections,
-and the network remains a single, healthy island.
+## Flow 2: PhoneB Connects as a Lieutenant
 
----
+1.  **App Start:** `MainActivity` is launched on PhoneB.
+2.  **UI Timeout:** The 10-second window to become the General passes without the button being pressed.
+3.  **Default to Lieutenant:** The app logic defaults to the **Lieutenant** role.
+4.  **Start Discovery (for Hub):**
+    *   `NearbyConnectionsManager` calls `startDiscovery()`.
+    *   **`serviceId`:** `HUB_SERVICE_ID` is used to find the General.
+    *   **`strategy`:** `Strategy.P2P_STAR`.
+    *   **`EndpointDiscoveryCallback`:** A callback is provided to handle discovery events.
+5.  **Endpoint Found:**
+    *   The `onEndpointFound` callback is triggered when PhoneB discovers PhoneA.
+    *   `NearbyConnectionsManager` immediately calls `requestConnection()` to connect to PhoneA.
+6.  **Connection Handshake (on General - PhoneA):**
+    *   The `onConnectionInitiated` callback is triggered on PhoneA.
+    *   The logic checks if `lieutenantEndpointIds.size() < MAX_LIEUTENANTS`. It is, so...
+    *   PhoneA calls `acceptConnection()`.
+7.  **Connection Result (on Lieutenant - PhoneB):**
+    *   The `onConnectionResult` callback is triggered on PhoneB with `STATUS_OK`.
+    *   PhoneB stores the endpoint ID for PhoneA (`mainHubEndpointId`).
+8.  **Become a Lieutenant:**
+    *   Now successfully connected to the General, PhoneB's `TopologyOptimizer` logic transitions it fully to the Lieutenant role.
+    *   It calls `startAdvertising()` using the **`CLIENT_SERVICE_ID`** ("localmesh2-client-level").
+9.  **Ready State:** PhoneB is now connected to the General and is advertising for Leafs to connect.
 
-1.  **NewNode Startup:** A new node, `NewNode`, starts the application. The
-    `NearbyConnectionsManager` is initialized, which in turn initializes the `TopologyOptimizer`.
-    `NewNode` begins discovering other nodes in the vicinity.
+## Flow 3: PhoneC is Demoted to a Leaf
 
-2.  **Discovery:** `NewNode`'s `endpointDiscoveryCallback` in `NearbyConnectionsManager` is
-    triggered for each nearby node. These discovered endpoints are added to a set of
-    `availablePeers` in the `TopologyOptimizer`.
+1.  **Pre-condition:** The General (PhoneA) already has the maximum number of Lieutenants connected (`MAX_LIEUTENANTS`).
+2.  **App Start:** `MainActivity` is launched on PhoneC.
+3.  **Default to Lieutenant:** The 10-second UI window expires, and PhoneC defaults to the **Lieutenant** role.
+4.  **Start Discovery (for Hub):** PhoneC starts discovery using `HUB_SERVICE_ID`.
+5.  **Endpoint Found:** PhoneC discovers the General (PhoneA) and calls `requestConnection()`.
+6.  **Connection Handshake (on General - PhoneA):**
+    *   The `onConnectionInitiated` callback is triggered on PhoneA.
+    *   The logic checks if `lieutenantEndpointIds.size() < MAX_LIEUTENANTS`. The check fails (it is full).
+    *   PhoneA calls `rejectConnection()`.
+7.  **Connection Result (on Demoted Phone - PhoneC):**
+    *   The `onConnectionResult` callback is triggered on PhoneC with a failure status (e.g., `STATUS_CONNECTION_REJECTED`).
+    *   The logic identifies this as a "demotion" event. `mainHubEndpointId` remains `null`.
+8.  **Transition to Leaf:**
+    *   The `TopologyOptimizer` on PhoneC transitions the phone to the **Leaf** role.
+    *   It stops discovering for the Hub (`HUB_SERVICE_ID`).
+    *   It starts a new discovery process, this time for Lieutenants, using **`CLIENT_SERVICE_ID`**.
+9.  **Discover Lieutenant:** PhoneC's discovery finds PhoneB advertising. It calls `requestConnection()`.
+10. **Connection Handshake (on Lieutenant - PhoneB):**
+    *   The `onConnectionInitiated` callback fires on PhoneB.
+    *   The logic checks if `clientEndpointIds.size() < MAX_CLIENTS_PER_LIEUTENANT`. It is not full.
+    *   PhoneB calls `acceptConnection()`.
+11. **Connection Result (on Leaf - PhoneC):**
+    *   The `onConnectionResult` callback is triggered on PhoneC with `STATUS_OK`.
+    *   PhoneC stores the endpoint ID for PhoneB (`lieutenantEndpointId`).
+12. **Ready State:** PhoneC is now a Leaf, connected to the Lieutenant PhoneB.
 
-3.  **Mandatory First Connection:**
-    *   The `TopologyOptimizer`'s `ensureConnectionsJob` continuously monitors the number of
-        active connections. Seeing it has none, it picks a random node from its `availablePeers`
-        list, `OtherNodeA`, and requests a connection.
-    *   If the connection to `OtherNodeA` succeeds, `NewNode` now has one connection.
-    *   If the connection fails (e.g., `OtherNodeA` just reached its own connection limit in a
-        race condition), the `TopologyOptimizer` will simply pick another peer from the
-        `availablePeers` list on its next cycle and try again. This process repeats until one
-        connection is successfully established, guaranteeing `NewNode` joins the network.
+## Flow 4: General Broadcasts a Display Message
 
-4.  **Best-Effort Second Connection:**
-    *   On the next cycle of the `ensureConnectionsJob`, the `TopologyOptimizer` sees that
-        `NewNode` has one connection and attempts to establish a second for robustness.
-    *   It picks another random, unconnected peer, `OtherNodeB`, from the `availablePeers` list and
-        attempts a connection.
-    *   If this succeeds, `NewNode` now has two connections.
-    *   If it fails, or if there are no other available peers, the `TopologyOptimizer` will wait
-        for a randomized period (30-45 seconds) and then check again. This "best-effort"
-        approach continues indefinitely.
-
-5.  **Receiving Connections:**
-    *   `NewNode` will also advertise its own availability.
-    *   When an incoming connection request is received, the `onConnectionInitiated` callback in
-        `NearbyConnectionsManager` checks if the node is already at its connection limit (5).
-    *   If it has fewer than 5 connections, it accepts the new connection.
-    *   If it already has 5 connections, it rejects the request, preventing oversaturation.
-
-## Phase 2: Gossip and Network Stability
-
-With the removal of the complex `reshuffle` logic, the network stabilizes organically. The periodic
-`purgeJob` in the `TopologyOptimizer` is still active, removing endpoints that haven't been seen in
-a while, which helps keep the network view clean. While the explicit `gossipJob` has been removed,
-gossip can be re-introduced as a separate, simplified mechanism if needed in the future. The primary
-focus of the "SlowConnect" algorithm is to ensure connectivity and prevent network partitions with
-minimal overhead.
-
-## Phase 3: User-initiated Display Command
-
-This phase remains largely unchanged from the previous architecture. A user action triggers a
-`DISPLAY` message, which floods through the network.
-
-1.  **User Action:** A user on any node triggers a `sendPeerDisplayCommand`.
-
-2.  **Broadcast:** The `NearbyConnectionsManager` constructs and broadcasts a `DISPLAY` type
-    `NetworkMessage`.
-
-3.  **Message Flooding:** The message is sent to all direct peers. Each receiving node processes the
-    command (updating its UI) and then re-broadcasts the message to its own peers (except the
-    original sender). A `seenMessageIds` map prevents infinite loops. This ensures the command
-    propagates rapidly throughout the entire mesh.
+1.  **User Action (on General - PhoneA):** The user taps a display button in the `WebView` UI.
+2.  **JavaScript Bridge:** The button click calls a JavaScript function that invokes the native Kotlin `JavaScriptInjectedAndroid.broadcastDisplayMessage(target)` method.
+3.  **Create Payload:**
+    *   A `NetworkMessage` is created with the `displayTarget` field set.
+    *   This object is serialized into a `Payload` of type `Payload.Type.BYTES`.
+4.  **Send to Lieutenants:**
+    *   The General's `NearbyConnectionsManager` calls `sendPayload()`, passing the payload to the list of all connected `lieutenantEndpointIds` (which includes PhoneB).
+5.  **Payload Received (on Lieutenant - PhoneB):**
+    *   The `PayloadCallback.onPayloadReceived` is triggered on PhoneB.
+    *   The incoming payload is deserialized back into a `NetworkMessage`.
+    *   The code checks that the sender was the `mainHubEndpointId`.
+6.  **Forward to Leafs:**
+    *   Since the message is from the Hub, the Lieutenant's logic immediately forwards it.
+    *   `NearbyConnectionsManager` calls `sendPayload()`, passing the *exact same payload* to its list of `clientEndpointIds` (which includes PhoneC).
+7.  **Payload Received (on Leaf - PhoneC):**
+    *   The `PayloadCallback.onPayloadReceived` is triggered on PhoneC.
+    *   The payload is deserialized into a `NetworkMessage`.
+    *   The app logic identifies it as a "display" message.
+8.  **Display Update:**
+    *   The message is passed to the `WebAppActivity` via its static reference.
+    *   The activity uses `runOnUiThread` to execute a JavaScript call in the `WebView`, updating the UI to show the chosen display.
+9.  **Simultaneous Display (on Lieutenant - PhoneB):** The Lieutenant, upon receiving the message from the General, will *also* perform the same UI update for its own screen, in parallel with forwarding the message.
