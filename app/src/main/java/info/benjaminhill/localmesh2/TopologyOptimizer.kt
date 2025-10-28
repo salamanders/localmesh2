@@ -16,7 +16,7 @@ import kotlin.time.Duration.Companion.seconds
  */
 object TopologyOptimizer {
 
-    private const val TAG = "P2P"
+    private const val TAG = "P2P_Opt"
     private lateinit var scope: CoroutineScope
     private lateinit var localId: String
 
@@ -56,6 +56,10 @@ object TopologyOptimizer {
 
         ensureConnectionsJob = scope.launch {
             while (true) {
+                // Stop and restart advertising, so others can be aware of us.
+                nearbyConnectionsManager.stopAdvertising()
+                nearbyConnectionsManager.startAdvertising()
+
                 val connectedPeers = EndpointRegistry.getDirectlyConnectedEndpoints()
 
                 when (connectedPeers.size) {
@@ -88,6 +92,7 @@ object TopologyOptimizer {
 
                     else -> { // >= 2 connections
                         // We are sufficiently connected. Reset the flag for the future.
+                        Log.d(TAG, "We are sufficiently connected to ${connectedPeers.size}, not forcing a new connection.")
                         clearedAfterFirstConnection = false
                     }
                 }

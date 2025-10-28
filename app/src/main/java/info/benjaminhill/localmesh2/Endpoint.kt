@@ -10,7 +10,4 @@ data class Endpoint(
     var distance: Int?,
     var immediatePeerIds: Set<String>? = null,
     var transferFailureCount: Int = 0,
-) {
-    val immediateConnections: Int?
-        get() = immediatePeerIds?.size
-}
+)

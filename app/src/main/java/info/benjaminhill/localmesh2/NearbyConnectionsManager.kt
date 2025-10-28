@@ -68,7 +68,7 @@ object NearbyConnectionsManager {
 
     fun startAdvertising() {
         Log.i(TAG, "startAdvertising()...")
-        connectionsClient.stopAdvertising()
+        // connectionsClient.stopAdvertising()
 
         val advertisingOptions =
             AdvertisingOptions.Builder().setStrategy(DISCOVERY_OPTIONS.strategy).build()
@@ -80,6 +80,11 @@ object NearbyConnectionsManager {
         }.addOnFailureListener { e ->
             Log.e(TAG, "$localId failed to start advertising", e)
         }
+    }
+
+    fun stopAdvertising() {
+        Log.i(TAG, "stopAdvertising()...")
+        connectionsClient.stopAdvertising()
     }
 
     fun startDiscovery() {
@@ -94,12 +99,18 @@ object NearbyConnectionsManager {
         }
     }
 
+    fun stopDiscovery() {
+        connectionsClient.stopDiscovery()
+    }
+
     fun stop() {
         Log.w(TAG, "NearbyConnectionsManager.stop() called.")
+        stopAdvertising()
+        stopDiscovery()
+
         messageCleanupJob.cancel()
         TopologyOptimizer.stop()
         connectionsClient.stopAllEndpoints()
-        connectionsClient.stopDiscovery()
     }
 
 
@@ -212,8 +223,8 @@ object NearbyConnectionsManager {
                     when (endpoint.transferFailureCount) {
                         1 -> Log.i(TAG,"Payload transfer to $endpointId $reason. This is the first failure.")
                         2 -> Log.w(TAG,"Payload transfer to $endpointId $reason. This is the second failure.")
-                        3 -> {
-                            Log.e(TAG,"Payload transfer to $endpointId $reason. This is the third failure. Disconnecting.")
+                        else -> {
+                            Log.e(TAG,"Payload transfer to $endpointId $reason. This is the ${endpoint.transferFailureCount} failure. Disconnecting.")
                             disconnectFromEndpoint(endpointId)
                             EndpointRegistry.remove(endpointId)
                         }
@@ -285,6 +296,7 @@ object NearbyConnectionsManager {
 
 
         override fun onEndpointLost(endpointId: String) {
+            // TODO: This may be too much logging now that we manually stop and restart advertising.
             Log.i(TAG, "Endpoint lost: $endpointId")
             EndpointRegistry.remove(endpointId)
         }
