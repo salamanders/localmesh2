@@ -30,7 +30,7 @@ object NearbyConnectionsManager {
     private const val TAG = "P2P"
     private const val SERVICE_ID = "info.benjaminhill.localmesh2"
 
-    internal const val MAX_CONNECTIONS_HARDWARE_LIMIT = 7
+    internal const val MAX_CONNECTIONS = 5
 
     // Strategy.P2P_CLUSTER is used as it supports M-to-N connections,
     // which is suitable for a dynamic snake topology where multiple
@@ -290,31 +290,16 @@ object NearbyConnectionsManager {
             ) {
                 val endpoint = EndpointRegistry.get(endpointId)
                 Log.d(TAG, "onConnectionInitiated from ${endpoint.id}")
-                if (EndpointRegistry.getDirectlyConnectedEndpoints().size >= MAX_CONNECTIONS_HARDWARE_LIMIT) {
+                if (EndpointRegistry.getDirectlyConnectedEndpoints().size >= MAX_CONNECTIONS) {
                     Log.w(
                         TAG,
-                        "At connection limit. Finding a redundant peer to make room for $endpointId."
+                        "At connection limit. Rejecting $endpointId."
                     )
-                    val redundantPeer = TopologyOptimizer.findRedundantPeer()
-                    if (redundantPeer != null) {
-                        Log.i(
-                            TAG,
-                            "Making room for $endpointId by disconnecting from redundant peer ${redundantPeer.id}"
-                        )
-                        disconnectFromEndpoint(redundantPeer.id)
-                        connectionsClient.acceptConnection(endpointId, payloadCallback)
-                    } else {
-                        Log.e(
-                            TAG,
-                            "At connection limit but couldn't find a redundant peer. Rejecting $endpointId."
-                        )
-                        connectionsClient.rejectConnection(endpointId)
-                    }
+                    connectionsClient.rejectConnection(endpointId)
                     return
                 }
                 Log.d(TAG, "Accepting connection from $endpointId")
                 connectionsClient.acceptConnection(endpointId, payloadCallback)
-                // Don't update the distance yet.
             }
 
             override fun onConnectionResult(

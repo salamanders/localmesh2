@@ -345,3 +345,18 @@ simplicity, the `TopologyOptimizer` contained several valuable ideas for future 
   reconnect" to a new peer if the number of connections dropped below a minimum threshold.
 * **Value:** This would ensure that the node always maintains a minimum level of connectivity,
   making the network more resilient to node failures.
+
+# Feature: "SlowConnect" Mandate-and-Verify Join Algorithm
+
+## Goal
+
+- To simplify the network connection logic by removing complex reshuffling and gossip mechanisms.
+- To implement a more robust and predictable "Mandate-and-Verify" algorithm for new nodes joining the mesh.
+- To reduce the complexity of `TopologyOptimizer.kt` and `NearbyConnectionsManager.kt`.
+
+## Changes
+
+- [x] **Removed `reshuffle` and `gossip`:** The `reshuffleJob` and `gossipJob` have been removed from `TopologyOptimizer.kt`. The corresponding `findRedundantPeer` and `findWorstDistantNode` functions were also removed.
+- [x] **Implemented `ensureConnectionsJob`:** A new primary loop in `TopologyOptimizer.kt` now ensures that the node establishes a mandatory first connection and then makes a best-effort attempt to secure a second.
+- [x] **Updated Connection Logic:** The `onConnectionInitiated` logic in `NearbyConnectionsManager.kt` has been simplified to reject incoming connections if the node is already at its limit (5), rather than trying to disconnect a redundant peer.
+- [x] **Updated `onEndpointFound`:** The `onEndpointFound` function in `TopologyOptimizer.kt` now adds newly discovered endpoints to a simple set of `availablePeers` for the `ensureConnectionsJob` to use.
