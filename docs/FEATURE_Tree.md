@@ -92,7 +92,21 @@ This means the MainActivity will need a modification:
     * [ ] **onPayloadReceived(String endpointId, Payload payload):**
         * *(This phone shouldn't receive payloads, add a log here just in case.)*
 
-## **5. Role 2: Lieutenant (5 Phones)**
+## **5. Automatic Role Selection (Lieutenant or Leaf)**
+
+If the "Become Remote Control" button is not pressed within the initial 10-second window, the phone will automatically attempt to find a role in the network. The default behavior is to try and become a Lieutenant first.
+
+Here is the process:
+1.  **Default to Lieutenant:** The phone assumes the role of a Lieutenant and immediately starts discovering the Main Hub using `HUB_SERVICE_ID`.
+2.  **Connection Attempt:**
+    *   If it discovers a Hub, it will attempt to connect.
+    *   If the Hub accepts the connection, the phone successfully becomes a **Lieutenant**. It will then start advertising to Clients using `CLIENT_SERVICE_ID`.
+3.  **Demotion to Leaf:**
+    *   If the Hub *rejects* the connection (usually because it has reached its `MAX_LIEUTENANTS` limit), the phone is "demoted."
+    *   It will stop discovering the Hub and transition to the **Leaf** role.
+    *   As a Leaf, it will begin discovering Lieutenants using `CLIENT_SERVICE_ID` and attempt to connect to one of them.
+
+## **6. Role: Lieutenant (5 Phones)**
 
 This is the most complex role. It acts as a **Discoverer** (to find the Hub) and an **Advertiser** (
 to be found by Clients).
@@ -157,7 +171,7 @@ to be found by Clients).
             * [ ] **Forward the message:** Nearby.getConnectionsClient(this).sendPayload(
               clientEndpointIds, payload).
 
-## **6. Role 3: Client/LEAF (~25 Phones)**
+## **7. Role: Client/LEAF (~25 Phones)**
 
 This is the simplest role. It only discovers and receives. A phone that tried to connect to the Hub
 but was rejected becomes a LEAF.
