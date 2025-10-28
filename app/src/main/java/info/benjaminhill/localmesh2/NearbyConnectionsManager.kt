@@ -18,11 +18,11 @@ import com.google.android.gms.nearby.connection.Strategy
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.resume
 import kotlin.time.Duration.Companion.minutes
 
 /**
@@ -48,7 +48,8 @@ object NearbyConnectionsManager {
      * uid -> timestamp
      */
     private val seenMessageIds = ConcurrentHashMap<String, Long>()
-    private val connectionContinuations = ConcurrentHashMap<String, CancellableContinuation<Boolean>>()
+    private val connectionContinuations =
+        ConcurrentHashMap<String, CancellableContinuation<Boolean>>()
     private lateinit var appContext: Context
     private lateinit var scope: CoroutineScope
     private lateinit var localId: String
@@ -223,12 +224,24 @@ object NearbyConnectionsManager {
                 PayloadTransferUpdate.Status.FAILURE,
                 PayloadTransferUpdate.Status.CANCELED -> {
                     endpoint.transferFailureCount++
-                    val reason = if (update.status == PayloadTransferUpdate.Status.FAILURE) "failed" else "canceled"
+                    val reason =
+                        if (update.status == PayloadTransferUpdate.Status.FAILURE) "failed" else "canceled"
                     when (endpoint.transferFailureCount) {
-                        1 -> Log.i(TAG,"Payload transfer to $endpointId $reason. This is the first failure.")
-                        2 -> Log.w(TAG,"Payload transfer to $endpointId $reason. This is the second failure.")
+                        1 -> Log.i(
+                            TAG,
+                            "Payload transfer to $endpointId $reason. This is the first failure."
+                        )
+
+                        2 -> Log.w(
+                            TAG,
+                            "Payload transfer to $endpointId $reason. This is the second failure."
+                        )
+
                         else -> {
-                            Log.e(TAG,"Payload transfer to $endpointId $reason. This is the ${endpoint.transferFailureCount} failure. Disconnecting.")
+                            Log.e(
+                                TAG,
+                                "Payload transfer to $endpointId $reason. This is the ${endpoint.transferFailureCount} failure. Disconnecting."
+                            )
                             disconnectFromEndpoint(endpointId)
                             endpoint.distance = null
                         }
@@ -359,8 +372,8 @@ object NearbyConnectionsManager {
                         "onConnectionResult failed to connect to $endpointId: ${resolution.status.statusMessage}"
                     )
                     connectionContinuations.remove(endpointId)?.resume(false)
-                    // Assume the worst, remove it from the registry.
-                    EndpointRegistry.remove(endpointId)
+                    // TODO Assume the worst, remove it from the registry.
+                    // EndpointRegistry.remove(endpointId)
                 }
             }
 

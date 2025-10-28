@@ -30,11 +30,6 @@ object EndpointRegistry {
     // All peers.  Shallow copy, so edits are ok.
     fun getAllKnownEndpoints(): Set<Endpoint> = allEndpoints.values.toSet()
 
-    // Clears all endpoints that you are not directly connected to
-    fun clearNonDirectEndpoints() {
-        allEndpoints.values.removeIf { it.distance != 1 }
-    }
-
     // Immediate peers
     fun getDirectlyConnectedEndpoints(): Set<Endpoint> =
         getAllKnownEndpoints().filter { it.distance == 1 }.toSet()

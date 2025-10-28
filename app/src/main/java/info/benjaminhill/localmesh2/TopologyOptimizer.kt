@@ -6,7 +6,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -39,14 +38,10 @@ object TopologyOptimizer {
 
         ensureConnectionsJob = scope.launch {
             while (true) {
-                // Stop and restart advertising, so others can be aware of us.
-                nearbyConnectionsManager.stopAdvertising()
-                nearbyConnectionsManager.startAdvertising()
-
                 val connectedPeers = EndpointRegistry.getDirectlyConnectedEndpoints()
                 if (connectedPeers.size < 3) {
                     var connected = false
-                    while(!connected) {
+                    while (!connected) {
                         val peerToConnect = availablePeers.filter { candidate ->
                             connectedPeers.none { it.id == candidate }
                         }.randomOrNull()
