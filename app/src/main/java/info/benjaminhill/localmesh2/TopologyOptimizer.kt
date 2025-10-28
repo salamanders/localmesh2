@@ -58,6 +58,9 @@ object TopologyOptimizer {
                                 delay(3.seconds)
                                 false
                             }
+                        } else {
+                            Log.i(TAG, "No peers available for connection, waiting.")
+                            delay(10.seconds)
                         }
                     }
                 }

@@ -59,5 +59,5 @@ async function updateStatus() {
 
 // Initial fetch and then poll
 updateStatus();
-setInterval(updateStatus, 10 * 1000);
+setInterval(updateStatus, 30 * 1000);
 console.log('LOCALMESH_SCRIPT_SUCCESS:root');
