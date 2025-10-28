@@ -15,8 +15,11 @@ import com.google.android.gms.nearby.connection.Payload
 import com.google.android.gms.nearby.connection.PayloadCallback
 import com.google.android.gms.nearby.connection.PayloadTransferUpdate
 import com.google.android.gms.nearby.connection.Strategy
+import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
@@ -45,6 +48,7 @@ object NearbyConnectionsManager {
      * uid -> timestamp
      */
     private val seenMessageIds = ConcurrentHashMap<String, Long>()
+    private val connectionContinuations = ConcurrentHashMap<String, CancellableContinuation<Boolean>>()
     private lateinit var appContext: Context
     private lateinit var scope: CoroutineScope
     private lateinit var localId: String
@@ -238,24 +242,32 @@ object NearbyConnectionsManager {
         }
     }
 
-    internal fun requestConnection(endpointId: String) {
-        val endpoint = EndpointRegistry.get(endpointId, autoUpdateTs = true)
-        Log.i(TAG, "Requesting connection to $endpointId")
-        connectionsClient.requestConnection(localId, endpointId, connectionLifecycleCallback)
-            .addOnSuccessListener {
-                Log.d(TAG, "Successfully requested connection to $endpointId")
-                endpoint.distance = 1
-            }
-            .addOnFailureListener { e ->
-                Log.e(TAG, "Failed to request connection to $endpointId", e)
-                if (e.toString().contains("STATUS_ALREADY_CONNECTED_TO_ENDPOINT")) {
-                    Log.w(TAG, "... but we are already connected?")
+    internal suspend fun requestConnection(endpointId: String): Boolean =
+        suspendCancellableCoroutine { continuation ->
+            val endpoint = EndpointRegistry.get(endpointId, autoUpdateTs = true)
+            Log.i(TAG, "Requesting connection to $endpointId")
+            connectionContinuations[endpointId] = continuation
+            connectionsClient.requestConnection(localId, endpointId, connectionLifecycleCallback)
+                .addOnSuccessListener {
+                    Log.d(TAG, "Successfully requested connection to $endpointId")
                     endpoint.distance = 1
-                } else {
-                    endpoint.distance = null
                 }
+                .addOnFailureListener { e ->
+                    Log.e(TAG, "Failed to request connection to $endpointId", e)
+                    if (e.toString().contains("STATUS_ALREADY_CONNECTED_TO_ENDPOINT")) {
+                        Log.w(TAG, "... but we are already connected?")
+                        endpoint.distance = 1
+                        connectionContinuations.remove(endpointId)?.resume(true)
+                    } else {
+                        endpoint.distance = null
+                        connectionContinuations.remove(endpointId)?.resume(false)
+                    }
+                }
+            continuation.invokeOnCancellation {
+                Log.w(TAG, "Connection to $endpointId cancelled.")
+                connectionContinuations.remove(endpointId)
             }
-    }
+        }
 
     // We have decided to disconnect from this endpoing to make the mesh better
     internal fun disconnectFromEndpoint(endpointId: String) {
@@ -328,6 +340,7 @@ object NearbyConnectionsManager {
                 if (resolution.status.isSuccess) {
                     Log.i(TAG, "Successfully connected to $endpointId")
                     endpoint.distance = 1
+                    connectionContinuations.remove(endpointId)?.resume(true)
 
                     // Immediately share our network state with the new peer
                     val gossipMessage = NetworkMessage(
@@ -345,6 +358,7 @@ object NearbyConnectionsManager {
                         TAG,
                         "onConnectionResult failed to connect to $endpointId: ${resolution.status.statusMessage}"
                     )
+                    connectionContinuations.remove(endpointId)?.resume(false)
                     // Assume the worst, remove it from the registry.
                     EndpointRegistry.remove(endpointId)
                 }
@@ -352,6 +366,7 @@ object NearbyConnectionsManager {
 
             override fun onDisconnected(endpointId: String) {
                 Log.w(TAG, "onDisconnected from $endpointId")
+                connectionContinuations.remove(endpointId)?.resume(false)
                 EndpointRegistry.remove(endpointId)
             }
         }
