@@ -3,7 +3,6 @@ package info.benjaminhill.localmesh2
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.cbor.Cbor
-import java.util.UUID
 
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable

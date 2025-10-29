@@ -20,6 +20,7 @@ import com.google.android.gms.nearby.connection.Strategy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -39,14 +40,13 @@ object NearbyConnectionsManager {
     private lateinit var localId: String
     private lateinit var messageCleanupJob: Job
     private lateinit var connectionsClient: ConnectionsClient
+    private var hubConnectionTimeoutJob: Job? = null
 
     @OptIn(ExperimentalAtomicApi::class)
     val role: AtomicReference<Role> = AtomicReference(Role.LIEUTENANT)
-
     val lieutenantEndpointIds = mutableListOf<String>()
     val clientEndpointIds = mutableListOf<String>()
     var mainHubEndpointId: String? = null
-
     fun initialize(newContext: Context, newScope: CoroutineScope) {
         appContext = newContext.applicationContext
         scope = newScope
@@ -55,7 +55,7 @@ object NearbyConnectionsManager {
     }
 
     suspend fun start(reboot: Boolean = false) {
-        if(reboot) {
+        if (reboot) {
             runBlocking {
                 connectionsClient.stopAllEndpoints()
                 delay(5.seconds)
@@ -65,7 +65,6 @@ object NearbyConnectionsManager {
                 role.store(Role.CLIENT)
             }
         }
-
         when (role.load()) {
             Role.HUB -> startHub()
             Role.LIEUTENANT -> startLieutenant()
@@ -109,7 +108,6 @@ object NearbyConnectionsManager {
     private fun startHub() {
         Log.i(TAG, "Starting Hub...")
         val advertisingOptions = AdvertisingOptions.Builder().setStrategy(STRATEGY).build()
-
         connectionsClient.startAdvertising(
             localId,
             Role.HUB.advertisedServiceId!!,
@@ -124,8 +122,20 @@ object NearbyConnectionsManager {
 
     private fun startLieutenant() {
         Log.i(TAG, "Starting Lieutenant...")
-
         val discoveryOptions = DiscoveryOptions.Builder().setStrategy(STRATEGY).build()
+
+        hubConnectionTimeoutJob?.cancel()
+        hubConnectionTimeoutJob = scope.launch {
+            Log.i(TAG, "Lieutenant Hub connection timed search started.")
+            delay(60.seconds)
+            Log.w(TAG, "Lieutenant Hub connection search timed out. Demoting to CLIENT.")
+            mainHubEndpointId = null
+            if (role.load() == Role.LIEUTENANT) {
+                role.store(Role.CLIENT)
+                start(reboot = true)
+            }
+        }
+
         connectionsClient.startDiscovery(
             Role.HUB.advertisedServiceId!!, hubEndpointDiscoveryCallback, discoveryOptions
         ).addOnSuccessListener {
@@ -138,14 +148,11 @@ object NearbyConnectionsManager {
 
     private suspend fun startClient() {
         Log.i(TAG, "Starting Client...")
-
         // First give the Lieutenant mode time to clear out
         connectionsClient.stopDiscovery()
         connectionsClient.stopAdvertising()
         delay(5.seconds)
-
         // No Advertising
-
         val discoveryOptions = DiscoveryOptions.Builder().setStrategy(STRATEGY).build()
         connectionsClient.startDiscovery(
             Role.LIEUTENANT.advertisedServiceId!!, clientEndpointDiscoveryCallback, discoveryOptions
@@ -163,16 +170,24 @@ object NearbyConnectionsManager {
                 val receivedMessage = NetworkMessage.fromByteArray(payload.asBytes()!!)
                 when (role.load()) {
                     Role.LIEUTENANT -> {
-                        Log.i(TAG, "Lieutenant received message from Hub: ${receivedMessage.displayTarget}")
+                        Log.i(
+                            TAG,
+                            "Lieutenant received message from Hub: ${receivedMessage.displayTarget}"
+                        )
                         // Both rebroadcast and display
                         broadcastInternal(receivedMessage)
                         WebAppActivity.navigateTo(receivedMessage.displayTarget)
                     }
+
                     Role.CLIENT -> {
-                        Log.i(TAG, "Client received message from Lieutenant: ${receivedMessage.displayTarget}")
+                        Log.i(
+                            TAG,
+                            "Client received message from Lieutenant: ${receivedMessage.displayTarget}"
+                        )
                         // Just display
                         WebAppActivity.navigateTo(receivedMessage.displayTarget)
                     }
+
                     else -> {
                         Log.e(TAG, "Why did hub just get told to ${receivedMessage.displayTarget}?")
                     }
@@ -184,34 +199,31 @@ object NearbyConnectionsManager {
             // No special handling needed for this topology
         }
     }
-
-    private val hubConnectionLifecycleCallback =
-        object : ConnectionLifecycleCallback() {
-            override fun onConnectionInitiated(endpointId: String, connectionInfo: ConnectionInfo) {
-                if (lieutenantEndpointIds.size >= MAX_LIEUTENANTS) {
-                    Log.i(TAG, "Lieutenant is NOT authorized to connect to this Hub: $endpointId")
-                    connectionsClient.rejectConnection(endpointId)
-                } else {
-                    Log.i(TAG, "Lieutenant is authorized to connect to this Hub: $endpointId")
-                    connectionsClient.acceptConnection(endpointId, payloadCallback)
-                }
-            }
-
-            override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
-                if (result.status.isSuccess) {
-                    Log.i(TAG, "Lieutenant now connected to this Hub: $endpointId")
-                    lieutenantEndpointIds.add(endpointId)
-                } else {
-                    Log.i(TAG, "Lieutenant filed to connect to this Hub: $endpointId")
-                }
-            }
-
-            override fun onDisconnected(endpointId: String) {
-                lieutenantEndpointIds.remove(endpointId)
-                Log.i(TAG, "Lieutenant disconnected from this Hub: $endpointId")
+    private val hubConnectionLifecycleCallback = object : ConnectionLifecycleCallback() {
+        override fun onConnectionInitiated(endpointId: String, connectionInfo: ConnectionInfo) {
+            if (lieutenantEndpointIds.size >= MAX_LIEUTENANTS) {
+                Log.i(TAG, "Lieutenant is NOT authorized to connect to this Hub: $endpointId")
+                connectionsClient.rejectConnection(endpointId)
+            } else {
+                Log.i(TAG, "Lieutenant is authorized to connect to this Hub: $endpointId")
+                connectionsClient.acceptConnection(endpointId, payloadCallback)
             }
         }
 
+        override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
+            if (result.status.isSuccess) {
+                Log.i(TAG, "Lieutenant now connected to this Hub: $endpointId")
+                lieutenantEndpointIds.add(endpointId)
+            } else {
+                Log.i(TAG, "Lieutenant filed to connect to this Hub: $endpointId")
+            }
+        }
+
+        override fun onDisconnected(endpointId: String) {
+            lieutenantEndpointIds.remove(endpointId)
+            Log.i(TAG, "Lieutenant disconnected from this Hub: $endpointId")
+        }
+    }
     private val lieutenantToHubConnectionLifecycleCallback =
         object : ConnectionLifecycleCallback() {
             override fun onConnectionInitiated(endpointId: String, connectionInfo: ConnectionInfo) {
@@ -220,11 +232,13 @@ object NearbyConnectionsManager {
             }
 
             override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
+                hubConnectionTimeoutJob?.cancel()
                 if (result.status.isSuccess) {
                     Log.w(TAG, "Hi Hub thanks for letting me be your lieutenant")
                     mainHubEndpointId = endpointId
 
-                    val advertisingOptions = AdvertisingOptions.Builder().setStrategy(STRATEGY).build()
+                    val advertisingOptions =
+                        AdvertisingOptions.Builder().setStrategy(STRATEGY).build()
                     connectionsClient.startAdvertising(
                         localId,
                         Role.LIEUTENANT.advertisedServiceId!!,
@@ -321,7 +335,6 @@ object NearbyConnectionsManager {
             // Don't care
         }
     }
-
     private val clientEndpointDiscoveryCallback = object : EndpointDiscoveryCallback() {
         override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
             if (role.load() == Role.CLIENT && mainHubEndpointId == null) {

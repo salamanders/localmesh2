@@ -108,7 +108,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private  fun startMesh() {
+    private fun startMesh() {
         Log.i(TAG, "Permissions granted, starting service...")
         NearbyConnectionsManager.initialize(this, lifecycleScope)
         runBlocking {
