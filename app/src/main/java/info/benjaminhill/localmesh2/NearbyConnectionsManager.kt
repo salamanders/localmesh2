@@ -125,19 +125,6 @@ object NearbyConnectionsManager {
     private fun startLieutenant() {
         Log.i(TAG, "Starting Lieutenant...")
 
-        val advertisingOptions = AdvertisingOptions.Builder().setStrategy(STRATEGY).build()
-        connectionsClient.startAdvertising(
-            localId,
-            Role.LIEUTENANT.advertisedServiceId!!,
-            clientConnectionLifecycleCallback,
-            advertisingOptions
-        ).addOnSuccessListener {
-            Log.i(TAG, "Lieutenant advertising for clients started.")
-        }.addOnFailureListener { e ->
-            Log.e(TAG, "Lieutenant advertising for clients failed.", e)
-            runBlocking { start(reboot = true) }
-        }
-
         val discoveryOptions = DiscoveryOptions.Builder().setStrategy(STRATEGY).build()
         connectionsClient.startDiscovery(
             Role.HUB.advertisedServiceId!!, hubEndpointDiscoveryCallback, discoveryOptions
@@ -236,6 +223,20 @@ object NearbyConnectionsManager {
                 if (result.status.isSuccess) {
                     Log.w(TAG, "Hi Hub thanks for letting me be your lieutenant")
                     mainHubEndpointId = endpointId
+
+                    val advertisingOptions = AdvertisingOptions.Builder().setStrategy(STRATEGY).build()
+                    connectionsClient.startAdvertising(
+                        localId,
+                        Role.LIEUTENANT.advertisedServiceId!!,
+                        clientConnectionLifecycleCallback,
+                        advertisingOptions
+                    ).addOnSuccessListener {
+                        Log.i(TAG, "Lieutenant advertising for clients started.")
+                    }.addOnFailureListener { e ->
+                        Log.e(TAG, "Lieutenant advertising for clients failed.", e)
+                        runBlocking { start(reboot = true) }
+                    }
+
                 } else {
                     Log.w(TAG, "I guess the hub didn't want me as a lieutenant")
                     mainHubEndpointId = null
