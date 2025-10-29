@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalAtomicApi::class)
+
 package info.benjaminhill.localmesh2
 
 import android.content.Context
@@ -5,17 +7,15 @@ import android.util.Log
 import android.webkit.JavascriptInterface
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 @Suppress("unused")
 class JavaScriptInjectedAndroid(private val context: Context) {
 
     private val visualizations: Set<String> by lazy {
-        context.assets.list("")
-            ?.filter { asset ->
-                context.assets.list(asset)?.contains("index.html") == true
-            }
-            ?.toSortedSet()
-            ?: emptySet()
+        context.assets.list("")?.filter { asset ->
+            context.assets.list(asset)?.contains("index.html") == true
+        }?.toSortedSet() ?: emptySet()
     }
 
     @Serializable
@@ -28,15 +28,19 @@ class JavaScriptInjectedAndroid(private val context: Context) {
     )
 
     @JavascriptInterface
-    fun getStatus(): String = Json.encodeToString(
-        Status(
-            visualizations = visualizations,
-            id = CachedPrefs.getId(context),
-            role = RoleManager.role.value.name,
-            peers = EndpointRegistry.getDirectlyConnectedEndpoints().map { it.id }.toSet(),
-            timestamp = System.currentTimeMillis()
+    fun getStatus(): String {
+        val hubPeer = listOfNotNull(NearbyConnectionsManager.mainHubEndpointId)
+
+        return Json.encodeToString(
+            Status(
+                visualizations = visualizations,
+                id = CachedPrefs.getId(context),
+                role = NearbyConnectionsManager.role.load().toString(),
+                peers = (NearbyConnectionsManager.clientEndpointIds + NearbyConnectionsManager.lieutenantEndpointIds + hubPeer).toSet(),
+                timestamp = System.currentTimeMillis()
+            )
         )
-    )
+    }
 
     @JavascriptInterface
     fun sendPeerDisplayCommand(folder: String) {

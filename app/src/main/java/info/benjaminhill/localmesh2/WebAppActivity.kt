@@ -3,6 +3,7 @@ package info.benjaminhill.localmesh2
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +18,7 @@ class WebAppActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "onCreate with intent: $intent")
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         // includes enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)

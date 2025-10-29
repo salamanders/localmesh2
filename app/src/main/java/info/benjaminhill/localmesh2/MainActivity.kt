@@ -1,9 +1,12 @@
+@file:OptIn(ExperimentalAtomicApi::class)
+
 package info.benjaminhill.localmesh2
 
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,6 +20,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.time.Duration.Companion.seconds
 
 class MainActivity : ComponentActivity() {
 
@@ -24,7 +32,7 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions.all { it.value }) {
-            startMesh()
+            runBlocking { startMesh() }
         } else {
             Log.e(TAG, "User denied permissions.")
             Toast.makeText(
@@ -35,6 +43,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         val dangerousPermissions = PermissionUtils.getDangerousPermissions(this)
         val allPermissionsGranted = dangerousPermissions.all {
@@ -61,6 +70,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun logPermissions() {
+        packageManager.getPackageInfo(
+            packageName,
+            PackageManager.GET_PERMISSIONS
+        ).requestedPermissions?.forEach {
+            Log.d(
+                "PermCheck",
+                "$it: ${if (checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED) "GRANTED" else "DENIED"}"
+            )
+        }
+    }
+
     private fun selectRole() {
         setContent {
             Column(
@@ -69,7 +90,8 @@ class MainActivity : ComponentActivity() {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Button(onClick = {
-                    RoleManager.setRole(Role.HUB)
+                    NearbyConnectionsManager.role.store(Role.HUB)
+                    logPermissions()
                     startMesh()
                 }) {
                     Text("Become Remote Control")
@@ -77,20 +99,23 @@ class MainActivity : ComponentActivity() {
             }
         }
         lifecycleScope.launch {
-            delay(10000)
-            if (RoleManager.role.value != Role.HUB) {
-                RoleManager.setRole(Role.LIEUTENANT)
+            delay(10.seconds)
+            if (NearbyConnectionsManager.role.load() != Role.HUB) {
+                NearbyConnectionsManager.role.store(Role.LIEUTENANT)
+                logPermissions()
                 startMesh()
             }
         }
     }
 
-    private fun startMesh() {
+    private  fun startMesh() {
         Log.i(TAG, "Permissions granted, starting service...")
         NearbyConnectionsManager.initialize(this, lifecycleScope)
-        NearbyConnectionsManager.start()
+        runBlocking {
+            NearbyConnectionsManager.start()
+        }
 
-        val webAppPath = when (RoleManager.role.value) {
+        val webAppPath = when (NearbyConnectionsManager.role.load()) {
             Role.HUB -> "index.html"
             else -> "client.html"
         }
