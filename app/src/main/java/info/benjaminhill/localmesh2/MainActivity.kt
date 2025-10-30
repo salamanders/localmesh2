@@ -90,7 +90,7 @@ class MainActivity : ComponentActivity() {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Button(onClick = {
-                    NearbyConnectionsManager.role.store(Role.HUB)
+                    NearbyConnectionsManager.role.store(Role.COMMANDER)
                     logPermissions()
                     startMesh()
                 }) {
@@ -100,7 +100,7 @@ class MainActivity : ComponentActivity() {
         }
         lifecycleScope.launch {
             delay(10.seconds)
-            if (NearbyConnectionsManager.role.load() != Role.HUB) {
+            if (NearbyConnectionsManager.role.load() != Role.COMMANDER) {
                 NearbyConnectionsManager.role.store(Role.LIEUTENANT)
                 logPermissions()
                 startMesh()
@@ -116,7 +116,7 @@ class MainActivity : ComponentActivity() {
         }
 
         val webAppPath = when (NearbyConnectionsManager.role.load()) {
-            Role.HUB -> "index.html"
+            Role.COMMANDER -> "index.html"
             else -> "client.html"
         }
 

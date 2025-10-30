@@ -29,14 +29,14 @@ class JavaScriptInjectedAndroid(private val context: Context) {
 
     @JavascriptInterface
     fun getStatus(): String {
-        val hubPeer = listOfNotNull(NearbyConnectionsManager.mainHubEndpointId)
+        val commanderPeers = listOfNotNull(NearbyConnectionsManager.mainCommanderEndpointId)
 
         return Json.encodeToString(
             Status(
                 visualizations = visualizations,
                 id = CachedPrefs.getId(context),
                 role = NearbyConnectionsManager.role.load().toString(),
-                peers = (NearbyConnectionsManager.clientEndpointIds + NearbyConnectionsManager.lieutenantEndpointIds + hubPeer).toSet(),
+                peers = (NearbyConnectionsManager.clientEndpointIds + NearbyConnectionsManager.lieutenantEndpointIds + commanderPeers).toSet(),
                 timestamp = System.currentTimeMillis()
             )
         )

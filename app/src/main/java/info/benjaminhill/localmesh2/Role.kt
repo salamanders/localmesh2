@@ -1,7 +1,7 @@
 package info.benjaminhill.localmesh2
 
 enum class Role(val advertisedServiceId: String?) {
-    HUB("LM_HUB"),
+    COMMANDER("LM_COMMANDER"),
     LIEUTENANT("LM_LIEUTENANT"),
     CLIENT(null)
 }
