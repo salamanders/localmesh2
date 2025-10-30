@@ -88,14 +88,14 @@ class LieutenantConnection(
                 endpointId: String,
                 connectionInfo: ConnectionInfo
             ) {
-                Log.i(TAG, "Lieutenant requesting connection to Commander: $endpointId")
-                connectionsClient.acceptConnection(endpointId, payloadFromCommanderCallback)
+                Log.i(TAG, "onConnectionInitiated: Lieutenant to Commander connection initiated from $endpointId. Waiting for Commander to accept.")
+                // The Commander accepts the connection, not the Lieutenant.
             }
 
             override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
                 connectionTimeout?.cancel()
                 if (result.status.isSuccess) {
-                    Log.i(TAG, "Lieutenant connected to Commander: $endpointId")
+                    Log.i(TAG, "onConnectionResult: Lieutenant connected to Commander: $endpointId")
                     mainCommanderEndpointId = endpointId
                     connectionsClient.stopDiscovery() // Found our commander.
 
@@ -114,14 +114,17 @@ class LieutenantConnection(
                         restart()
                     }
                 } else {
-                    Log.w(TAG, "Commander rejected connection. Restarting discovery.")
+                    Log.w(
+                        TAG,
+                        "onConnectionResult: Commander rejected connection. Restarting discovery. ${result.status.statusCode}"
+                    )
                     mainCommanderEndpointId = null
                     restart()
                 }
             }
 
             override fun onDisconnected(endpointId: String) {
-                Log.w(TAG, "Lieutenant disconnected from Commander. Restarting discovery.")
+                Log.w(TAG, "onDisconnected: Lieutenant disconnected from Commander. Restarting discovery.")
                 mainCommanderEndpointId = null
                 restart()
             }
@@ -129,7 +132,9 @@ class LieutenantConnection(
 
     private val commandertEndpointDiscoveryCallback = object : EndpointDiscoveryCallback() {
         override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
+            Log.i(TAG, "onEndpointFound: Discovered Commander: $endpointId")
             if (mainCommanderEndpointId == null) {
+                Log.i(TAG, "onEndpointFound: Requesting connection to Commander: $endpointId")
                 connectionsClient.requestConnection(
                     localId, endpointId, lieutenantToCommanderConnectionLifecycleCallback
                 )

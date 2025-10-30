@@ -33,22 +33,22 @@ class CommanderConnection(
     private val lieutenandToCommanderConnectionLifecycleCallback =
         object : ConnectionLifecycleCallback() {
             override fun onConnectionInitiated(endpointId: String, connectionInfo: ConnectionInfo) {
-                Log.i(TAG, "Lieutenant is authorized to connect to this Commander: $endpointId")
+                Log.i(TAG, "onConnectionInitiated: Accepting connection from $endpointId")
                 connectionsClient.acceptConnection(endpointId, payloadCallback)
             }
 
             override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
                 if (result.status.isSuccess) {
-                    Log.i(TAG, "Lieutenant now connected to this Commander: $endpointId")
+                    Log.i(TAG, "onConnectionResult: Successfully connected to $endpointId")
                     lieutenantEndpointIds.add(endpointId)
                 } else {
-                    Log.i(TAG, "Lieutenant failed to connect to this Commander: $endpointId")
+                    Log.w(TAG, "onConnectionResult: Failed to connect to $endpointId: ${result.status.statusCode}")
                 }
             }
 
             override fun onDisconnected(endpointId: String) {
+                Log.i(TAG, "onDisconnected: $endpointId")
                 lieutenantEndpointIds.remove(endpointId)
-                Log.i(TAG, "Lieutenant disconnected from this Commander: $endpointId")
             }
         }
 
