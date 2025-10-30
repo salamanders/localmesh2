@@ -25,16 +25,16 @@ async function updateStatus() {
                 const li = document.createElement('li');
                 li.textContent = folder;
                 li.addEventListener('click', () => {
-                    const renderLocally = document.getElementById('renderLocally').checked;
-                    if (renderLocally) {
-                        if (folder == 'camera') {
+                    if (status.role === 'COMMANDER') {
+                        Android.sendPeerDisplayCommand(folder);
+                    } else {
+                        // This is "Display Locally"
+                        if (folder === 'camera') {
                             Android.sendPeerDisplayCommand('slideshow');
                             window.location.href = 'camera/index.html';
                         } else {
                             window.location.href = folder + '/index.html';
                         }
-                    } else {
-                        Android.sendPeerDisplayCommand(folder);
                     }
                 });
                 foldersList.appendChild(li);
