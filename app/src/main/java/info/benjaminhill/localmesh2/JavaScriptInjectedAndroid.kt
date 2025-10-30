@@ -5,6 +5,8 @@ package info.benjaminhill.localmesh2
 import android.content.Context
 import android.util.Log
 import android.webkit.JavascriptInterface
+import info.benjaminhill.localmesh2.p2p.NetworkHolder
+import info.benjaminhill.localmesh2.p2p.NetworkMessage
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -39,7 +41,8 @@ class JavaScriptInjectedAndroid(private val context: Context) {
     @JavascriptInterface
     fun sendPeerDisplayCommand(folder: String) {
         Log.d(TAG, "sendPeerDisplayCommand: $folder")
-        NetworkHolder.connection!!.broadcastDisplayMessage(folder)
+        val message = NetworkMessage(displayTarget = folder)
+        NetworkHolder.connection?.broadcast(message)
     }
 
     companion object {

@@ -20,10 +20,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import info.benjaminhill.localmesh2.p2p.ClientConnection
+import info.benjaminhill.localmesh2.p2p.CommanderConnection
+import info.benjaminhill.localmesh2.p2p.LieutenantConnection
+import info.benjaminhill.localmesh2.p2p.NetworkHolder
+import kotlinx.coroutines.launch
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 class MainActivity : ComponentActivity() {
-
+    @Suppress("PrivatePropertyName")
+    private val TAG = "MainActivity"
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -70,10 +76,10 @@ class MainActivity : ComponentActivity() {
         packageManager.getPackageInfo(
             packageName,
             PackageManager.GET_PERMISSIONS
-        ).requestedPermissions?.forEach {
+        ).requestedPermissions?.forEach { permission ->
             Log.d(
                 "PermCheck",
-                "$it: ${if (checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED) "GRANTED" else "DENIED"}"
+                "$permission: ${if (checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) "GRANTED" else "DENIED"}"
             )
         }
     }
@@ -87,9 +93,8 @@ class MainActivity : ComponentActivity() {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Button(onClick = {
-                    NetworkHolder.connection =
-                        CommanderConnection(applicationContext, lifecycleScope)
-                    NetworkHolder.connection!!.start()
+                    NetworkHolder.connection = CommanderConnection(applicationContext)
+                    collectMessages()
                     display("commander.html")
                 }) {
                     Text("Commander")
@@ -97,13 +102,14 @@ class MainActivity : ComponentActivity() {
                 Button(onClick = {
                     NetworkHolder.connection =
                         LieutenantConnection(applicationContext, lifecycleScope)
+                    collectMessages()
                     display("lieutenant.html")
                 }) {
                     Text("Lieutenant")
                 }
                 Button(onClick = {
-                    NetworkHolder.connection =
-                        ClientConnection(applicationContext, lifecycleScope)
+                    NetworkHolder.connection = ClientConnection(applicationContext)
+                    collectMessages()
                     display("client.html")
                 }) {
                     Text("Client")
@@ -115,6 +121,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun collectMessages() {
+        lifecycleScope.launch {
+            val connection = NetworkHolder.connection
+            if (connection == null) {
+                Log.e(TAG, "Null NetworkHolder.connection")
+                return@launch
+            }
+            Log.w(TAG, "Starting collectMessages")
+            connection.start()
+            connection.messages.collect { message ->
+                Log.i(TAG, "Received message: ${message.displayTarget}")
+                WebAppActivity.navigateTo(message.displayTarget)
+            }
+        }
+
     }
 
     private fun display(webAppPath: String) {
@@ -129,11 +152,5 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         Log.w(TAG, "MainActivity.onDestroy() called.")
         NetworkHolder.connection?.stop()
-    }
-
-    companion object {
-        private const val TAG = "MainActivity"
-
-
     }
 }

@@ -1,4 +1,4 @@
-package info.benjaminhill.localmesh2
+package info.benjaminhill.localmesh2.p2p
 
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
@@ -10,10 +10,10 @@ data class NetworkMessage(
     /** Per-Type optional fields */
     val displayTarget: String,
 ) {
-    fun toByteArray(): ByteArray = Cbor.encodeToByteArray(serializer(), this)
+    fun toByteArray(): ByteArray = Cbor.Default.encodeToByteArray(serializer(), this)
 
     companion object {
         fun fromByteArray(byteArray: ByteArray): NetworkMessage =
-            Cbor.decodeFromByteArray(serializer(), byteArray)
+            Cbor.Default.decodeFromByteArray(serializer(), byteArray)
     }
 }

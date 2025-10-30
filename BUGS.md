@@ -16,25 +16,32 @@ Bug Template
 ---
 
 * Severity: High
-* State: Open
+* State: Fixed
 * Description: I started one phone as "Commander" and 4 phones as "Lieutenant" but didn't see any
   indication that they connected.
   Location in Code:
     * app/src/main/java/info/benjaminhill/localmesh2/CommanderConnection.kt,
     * app/src/main/java/info/benjaminhill/localmesh2/LieutenantConnection.kt
 * Attempts:
-    * (2025-10-30): Jules's Hypothesis: The connection fails because the Lieutenant is incorrectly trying to accept its own connection request to the Commander.
-        * **Current (Incorrect) Flow:**
+    * (2025-10-30): Jules's Hypothesis: The connection fails because the Lieutenant is incorrectly
+      trying to accept its own connection request to the Commander. This was proven to be incorrect.
+        * **Initial (Incorrect) Flow:**
             1. Commander starts advertising.
             2. Lieutenant discovers the Commander.
             3. Lieutenant calls `requestConnection()` to connect.
             4. `onConnectionInitiated` is triggered on both devices.
             5. Commander correctly calls `acceptConnection()`.
-            6. Lieutenant **incorrectly** also calls `acceptConnection()`. An endpoint cannot accept its own connection request. This likely causes the connection to hang.
-        * **Expected (Correct) Flow:**
+            6. Lieutenant **incorrectly** also calls `acceptConnection()`. An endpoint cannot accept
+               its own connection request. This likely causes the connection to hang.
+        * **Correct Flow:**
             1. Commander starts advertising.
             2. Lieutenant discovers the Commander.
             3. Lieutenant calls `requestConnection()` to connect.
             4. `onConnectionInitiated` is triggered on both devices.
-            5. Commander calls `acceptConnection()`.
-            6. The Lieutenant should simply log the event in `onConnectionInitiated` and wait for the `onConnectionResult` callback. It should **not** call `acceptConnection`.
+            5. Both Commander and Lieutenant call `acceptConnection()`.
+    * (2025-10-30): The hypothesis that the Lieutenant should not call `acceptConnection` was
+      incorrect. Both sides of the connection must call `acceptConnection`. The code was modified to
+      call `acceptConnection` in the `lieutenantToCommanderConnectionLifecycleCallback` and provide
+      the `payloadFromCommanderCallback`. This allows the Lieutenant to receive messages from the
+      Commander. The build was successful after the change.
+
