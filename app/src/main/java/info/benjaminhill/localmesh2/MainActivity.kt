@@ -20,11 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
-import kotlin.time.Duration.Companion.seconds
 
 class MainActivity : ComponentActivity() {
 
@@ -83,6 +79,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun selectRole() {
+        logPermissions()
         setContent {
             Column(
                 modifier = Modifier.fillMaxSize(),
@@ -90,25 +87,29 @@ class MainActivity : ComponentActivity() {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Button(onClick = {
-                    NearbyConnectionsManager.role.store(Role.COMMANDER)
-                    startMesh("index.html")
+                    NetworkHolder.connection =
+                        CommanderConnection(applicationContext, lifecycleScope)
+                    NetworkHolder.connection!!.start()
+                    display("commander.html")
                 }) {
                     Text("Commander")
                 }
                 Button(onClick = {
-                    NearbyConnectionsManager.role.store(Role.LIEUTENANT)
-                    startMesh("waiting.html")
+                    NetworkHolder.connection =
+                        LieutenantConnection(applicationContext, lifecycleScope)
+                    display("lieutenant.html")
                 }) {
                     Text("Lieutenant")
                 }
                 Button(onClick = {
-                    NearbyConnectionsManager.role.store(Role.CLIENT)
-                    startMesh("waiting.html")
+                    NetworkHolder.connection =
+                        ClientConnection(applicationContext, lifecycleScope)
+                    display("client.html")
                 }) {
                     Text("Client")
                 }
                 Button(onClick = {
-                    displayLocally()
+                    display("display.html")
                 }) {
                     Text("Display Locally")
                 }
@@ -116,23 +117,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startMesh(webAppPath: String) {
-        Log.i(TAG, "Permissions granted, starting service...")
-        NearbyConnectionsManager.initialize(this, lifecycleScope)
-        runBlocking {
-            NearbyConnectionsManager.start()
-        }
-
+    private fun display(webAppPath: String) {
         Intent(this, WebAppActivity::class.java).apply {
             putExtra(WebAppActivity.EXTRA_PATH, webAppPath)
-        }.also {
-            startActivity(it)
-        }
-    }
-
-    private fun displayLocally() {
-        Intent(this, WebAppActivity::class.java).apply {
-            putExtra(WebAppActivity.EXTRA_PATH, "index.html")
         }.also {
             startActivity(it)
         }
@@ -141,10 +128,12 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         Log.w(TAG, "MainActivity.onDestroy() called.")
-        NearbyConnectionsManager.stop()
+        NetworkHolder.connection?.stop()
     }
 
     companion object {
         private const val TAG = "MainActivity"
+
+
     }
 }

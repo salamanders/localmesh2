@@ -22,21 +22,15 @@ class JavaScriptInjectedAndroid(private val context: Context) {
     data class Status(
         val visualizations: Set<String>,
         val id: String,
-        val role: String,
-        val peers: Set<String>,
         val timestamp: Long,
     )
 
     @JavascriptInterface
     fun getStatus(): String {
-        val commanderPeers = listOfNotNull(NearbyConnectionsManager.mainCommanderEndpointId)
-
         return Json.encodeToString(
             Status(
                 visualizations = visualizations,
                 id = CachedPrefs.getId(context),
-                role = NearbyConnectionsManager.role.load().toString(),
-                peers = (NearbyConnectionsManager.clientEndpointIds + NearbyConnectionsManager.lieutenantEndpointIds + commanderPeers).toSet(),
                 timestamp = System.currentTimeMillis()
             )
         )
@@ -45,7 +39,7 @@ class JavaScriptInjectedAndroid(private val context: Context) {
     @JavascriptInterface
     fun sendPeerDisplayCommand(folder: String) {
         Log.d(TAG, "sendPeerDisplayCommand: $folder")
-        NearbyConnectionsManager.broadcastDisplayMessage(folder)
+        NetworkHolder.connection!!.broadcastDisplayMessage(folder)
     }
 
     companion object {

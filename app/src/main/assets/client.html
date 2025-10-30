@@ -15,15 +15,34 @@
 </head>
 <body>
 <div class="container">
-    <h1>Waiting for command...</h1>
+    <h1>Client</h1>
 </div>
 
 <div class="status-bar">
     ID: <span id="device-id">...</span>
-    | Role: <span id="device-role">...</span>
     | P2P: <span id="peer-count">0</span>
 </div>
 
-<script src="main.js" type="text/javascript"></script>
+<script type="text/javascript">
+    const deviceIdSpan = document.getElementById('device-id');
+    const peerCountSpan = document.getElementById('peer-count');
+
+    async function updateStatus() {
+        try {
+            const statusString = Android.getStatus();
+            const status = JSON.parse(statusString);
+            console.info('Got status', JSON.stringify(status));
+            deviceIdSpan.textContent = status.id || '...';
+        } catch (e) {
+            console.error('Failed to fetch status:', e);
+        }
+    }
+
+    // Initial fetch and then poll
+    updateStatus();
+    setInterval(updateStatus, 30 * 1000);
+    console.log('LOCALMESH_SCRIPT_SUCCESS:client');
+
+</script>
 </body>
 </html>
