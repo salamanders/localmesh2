@@ -33,7 +33,7 @@ class WebAppActivity : ComponentActivity() {
         }
 
         window.attributes = window.attributes.apply {
-            screenBrightness = 0.8f
+            screenBrightness = 1.0f
         }
 
         // Handles index.html

@@ -75,7 +75,9 @@ object NearbyConnectionsManager {
     fun stop() {
         Log.w(TAG, "NearbyConnectionsManager.stop() called.")
         connectionsClient.stopAllEndpoints()
-        messageCleanupJob.cancel()
+        if(::messageCleanupJob.isInitialized) {
+            messageCleanupJob.cancel()
+        }
     }
 
     fun broadcastDisplayMessage(displayTarget: String) {
