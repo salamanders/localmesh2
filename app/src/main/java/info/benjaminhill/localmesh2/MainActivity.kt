@@ -32,7 +32,7 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions.all { it.value }) {
-            runBlocking { startMesh() }
+            selectRole()
         } else {
             Log.e(TAG, "User denied permissions.")
             Toast.makeText(
@@ -86,42 +86,53 @@ class MainActivity : ComponentActivity() {
         setContent {
             Column(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.Center,
+                verticalArrangement = Arrangement.SpaceEvenly,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Button(onClick = {
                     NearbyConnectionsManager.role.store(Role.COMMANDER)
-                    logPermissions()
-                    startMesh()
+                    startMesh("index.html")
                 }) {
-                    Text("Become Remote Control")
+                    Text("Commander")
                 }
-            }
-        }
-        lifecycleScope.launch {
-            delay(10.seconds)
-            if (NearbyConnectionsManager.role.load() != Role.COMMANDER) {
-                NearbyConnectionsManager.role.store(Role.LIEUTENANT)
-                logPermissions()
-                startMesh()
+                Button(onClick = {
+                    NearbyConnectionsManager.role.store(Role.LIEUTENANT)
+                    startMesh("waiting.html")
+                }) {
+                    Text("Lieutenant")
+                }
+                Button(onClick = {
+                    NearbyConnectionsManager.role.store(Role.CLIENT)
+                    startMesh("waiting.html")
+                }) {
+                    Text("Client")
+                }
+                Button(onClick = {
+                    displayLocally()
+                }) {
+                    Text("Display Locally")
+                }
             }
         }
     }
 
-    private fun startMesh() {
+    private fun startMesh(webAppPath: String) {
         Log.i(TAG, "Permissions granted, starting service...")
         NearbyConnectionsManager.initialize(this, lifecycleScope)
         runBlocking {
             NearbyConnectionsManager.start()
         }
 
-        val webAppPath = when (NearbyConnectionsManager.role.load()) {
-            Role.COMMANDER -> "index.html"
-            else -> "client.html"
-        }
-
         Intent(this, WebAppActivity::class.java).apply {
             putExtra(WebAppActivity.EXTRA_PATH, webAppPath)
+        }.also {
+            startActivity(it)
+        }
+    }
+
+    private fun displayLocally() {
+        Intent(this, WebAppActivity::class.java).apply {
+            putExtra(WebAppActivity.EXTRA_PATH, "index.html")
         }.also {
             startActivity(it)
         }

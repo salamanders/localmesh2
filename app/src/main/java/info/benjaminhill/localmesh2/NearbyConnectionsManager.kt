@@ -32,21 +32,20 @@ import kotlin.time.Duration.Companion.seconds
  */
 object NearbyConnectionsManager {
     private const val TAG = "P2P"
-    private const val MAX_LIEUTENANTS = 5
-    private const val MAX_CLIENTS_PER_LIEUTENANT = 7
     private val STRATEGY = Strategy.P2P_CLUSTER
     private lateinit var appContext: Context
     private lateinit var scope: CoroutineScope
     private lateinit var localId: String
     private lateinit var messageCleanupJob: Job
     private lateinit var connectionsClient: ConnectionsClient
-    private var commanderConnectionTimeout: Job? = null
+    private var connectionTimeout: Job? = null
 
     @OptIn(ExperimentalAtomicApi::class)
     val role: AtomicReference<Role> = AtomicReference(Role.LIEUTENANT)
     val lieutenantEndpointIds = mutableListOf<String>()
     val clientEndpointIds = mutableListOf<String>()
     var mainCommanderEndpointId: String? = null
+    var connectedLieutenantEndpointId: String? = null
     fun initialize(newContext: Context, newScope: CoroutineScope) {
         appContext = newContext.applicationContext
         scope = newScope
@@ -54,21 +53,20 @@ object NearbyConnectionsManager {
         connectionsClient = Nearby.getConnectionsClient(appContext)
     }
 
-    suspend fun start(reboot: Boolean = false) {
-        if (reboot) {
-            runBlocking {
-                connectionsClient.stopAllEndpoints()
-                delay(5.seconds)
-                mainCommanderEndpointId = null
-                lieutenantEndpointIds.clear()
-                clientEndpointIds.clear()
-                role.store(Role.CLIENT)
-            }
-        }
+    suspend fun start() {
         when (role.load()) {
             Role.COMMANDER -> startCommander()
             Role.LIEUTENANT -> startLieutenant()
             Role.CLIENT -> startClient()
+        }
+    }
+
+    private fun restart() {
+        scope.launch {
+            Log.i(TAG, "Restarting connection process.")
+            connectionsClient.stopAllEndpoints()
+            delay(10.seconds)
+            start()
         }
     }
 
@@ -124,18 +122,17 @@ object NearbyConnectionsManager {
 
     private fun startLieutenant() {
         Log.i(TAG, "Starting Lieutenant...")
+        mainCommanderEndpointId = null
+        connectionsClient.stopDiscovery()
+
         val discoveryOptions = DiscoveryOptions.Builder().setStrategy(STRATEGY).build()
 
-        commanderConnectionTimeout?.cancel()
-        commanderConnectionTimeout = scope.launch {
-            Log.i(TAG, "Lieutenant Commander connection timed search started.")
+        connectionTimeout?.cancel()
+        connectionTimeout = scope.launch {
+            Log.i(TAG, "Lieutenant connection timed search started.")
             delay(60.seconds)
-            Log.w(TAG, "Lieutenant Commander connection search timed out. Demoting to CLIENT.")
-            mainCommanderEndpointId = null
-            if (role.load() == Role.LIEUTENANT) {
-                role.store(Role.CLIENT)
-                start(reboot = true)
-            }
+            Log.w(TAG, "Lieutenant connection search timed out. Restarting.")
+            restart()
         }
 
         connectionsClient.startDiscovery(
@@ -144,17 +141,23 @@ object NearbyConnectionsManager {
             Log.i(TAG, "Lieutenant discovery for Commander started.")
         }.addOnFailureListener { e ->
             Log.e(TAG, "Lieutenant discovery for Commander failed.", e)
-            runBlocking { start(reboot = true) }
+            restart()
         }
     }
 
-    private suspend fun startClient() {
+    private fun startClient() {
         Log.i(TAG, "Starting Client...")
-        // First give the Lieutenant mode time to clear out
+        connectedLieutenantEndpointId = null
         connectionsClient.stopDiscovery()
-        connectionsClient.stopAdvertising()
-        delay(5.seconds)
-        // No Advertising
+
+        connectionTimeout?.cancel()
+        connectionTimeout = scope.launch {
+            Log.i(TAG, "Client connection timed search started.")
+            delay(60.seconds)
+            Log.w(TAG, "Client connection search timed out. Restarting.")
+            restart()
+        }
+
         val discoveryOptions = DiscoveryOptions.Builder().setStrategy(STRATEGY).build()
         connectionsClient.startDiscovery(
             Role.LIEUTENANT.advertisedServiceId!!, clientEndpointDiscoveryCallback, discoveryOptions
@@ -162,7 +165,7 @@ object NearbyConnectionsManager {
             Log.i(TAG, "Client discovery for Lieutenants started.")
         }.addOnFailureListener { e ->
             Log.e(TAG, "Client discovery for Lieutenants failed.", e)
-            runBlocking { start(reboot = true) }
+            restart()
         }
     }
 
@@ -176,7 +179,6 @@ object NearbyConnectionsManager {
                             TAG,
                             "Lieutenant received message from Commander: ${receivedMessage.displayTarget}"
                         )
-                        // Both rebroadcast and display
                         broadcastInternal(receivedMessage)
                         WebAppActivity.navigateTo(receivedMessage.displayTarget)
                     }
@@ -186,12 +188,14 @@ object NearbyConnectionsManager {
                             TAG,
                             "Client received message from Lieutenant: ${receivedMessage.displayTarget}"
                         )
-                        // Just display
                         WebAppActivity.navigateTo(receivedMessage.displayTarget)
                     }
 
                     else -> {
-                        Log.e(TAG, "Why did commander just get told to ${receivedMessage.displayTarget}?")
+                        Log.e(
+                            TAG,
+                            "Why did commander just get told to ${receivedMessage.displayTarget}?"
+                        )
                     }
                 }
             }
@@ -203,13 +207,8 @@ object NearbyConnectionsManager {
     }
     private val commanderConnectionLifecycleCallback = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, connectionInfo: ConnectionInfo) {
-            if (lieutenantEndpointIds.size >= MAX_LIEUTENANTS) {
-                Log.i(TAG, "Lieutenant is NOT authorized to connect to this Commander: $endpointId")
-                connectionsClient.rejectConnection(endpointId)
-            } else {
-                Log.i(TAG, "Lieutenant is authorized to connect to this Commander: $endpointId")
-                connectionsClient.acceptConnection(endpointId, payloadCallback)
-            }
+            Log.i(TAG, "Lieutenant is authorized to connect to this Commander: $endpointId")
+            connectionsClient.acceptConnection(endpointId, payloadCallback)
         }
 
         override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
@@ -228,17 +227,22 @@ object NearbyConnectionsManager {
     }
     private val lieutenantToCommanderConnectionLifecycleCallback =
         object : ConnectionLifecycleCallback() {
-            override fun onConnectionInitiated(endpointId: String, connectionInfo: ConnectionInfo) {
-                Log.w(TAG, "Hi Commander, I would like to be your lieutenant")
+            override fun onConnectionInitiated(
+                endpointId: String,
+                connectionInfo: ConnectionInfo
+            ) {
+                Log.i(TAG, "Lieutenant requesting connection to Commander: $endpointId")
                 connectionsClient.acceptConnection(endpointId, payloadCallback)
             }
 
             override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
-                commanderConnectionTimeout?.cancel()
+                connectionTimeout?.cancel()
                 if (result.status.isSuccess) {
-                    Log.w(TAG, "Hi Commander thanks for letting me be your lieutenant")
+                    Log.i(TAG, "Lieutenant connected to Commander: $endpointId")
                     mainCommanderEndpointId = endpointId
+                    connectionsClient.stopDiscovery() // Found our commander.
 
+                    // Now start advertising to clients
                     val advertisingOptions =
                         AdvertisingOptions.Builder().setStrategy(STRATEGY).build()
                     connectionsClient.startAdvertising(
@@ -250,76 +254,69 @@ object NearbyConnectionsManager {
                         Log.i(TAG, "Lieutenant advertising for clients started.")
                     }.addOnFailureListener { e ->
                         Log.e(TAG, "Lieutenant advertising for clients failed.", e)
-                        runBlocking { start(reboot = true) }
+                        restart()
                     }
-
                 } else {
-                    Log.w(TAG, "I guess the commander didn't want me as a lieutenant")
+                    Log.w(TAG, "Commander rejected connection. Restarting discovery.")
                     mainCommanderEndpointId = null
-                    if (role.load() == Role.LIEUTENANT) {
-                        Log.w(TAG, "demoting self to client.")
-                        role.store(Role.CLIENT)
-                        runBlocking {
-                            start()
-                        }
-                    } else {
-                        Log.e(TAG, "Musta already changed rank.")
-                    }
+                    restart()
                 }
             }
 
             override fun onDisconnected(endpointId: String) {
+                Log.w(TAG, "Lieutenant disconnected from Commander. Restarting discovery.")
                 mainCommanderEndpointId = null
-                if (role.load() == Role.LIEUTENANT) {
-                    runBlocking {
-                        Log.w(TAG, "LIEUTENANT attempting to find new commander.")
-                        start()
-                    }
-                } else {
-                    Log.e(TAG, "Musta already changed rank.")
-                    runBlocking { start(reboot = true) }
-                }
+                restart()
             }
         }
 
     private val clientConnectionLifecycleCallback = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, connectionInfo: ConnectionInfo) {
-            if (clientEndpointIds.size >= MAX_CLIENTS_PER_LIEUTENANT) {
-                Log.w(TAG, "LIEUTENANT telling client to look elsewhere.")
-                connectionsClient.rejectConnection(endpointId)
-            } else {
-                connectionsClient.acceptConnection(endpointId, payloadCallback)
-                Log.i(TAG, "LIEUTENANT telling client please connect!")
-            }
+            // This is called on both Lieutenant and Client.
+            Log.i(TAG, "Accepting connection from $endpointId")
+            connectionsClient.acceptConnection(endpointId, payloadCallback)
         }
 
         override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
             if (result.status.isSuccess) {
-                clientEndpointIds.add(endpointId)
-                Log.i(TAG, "LIEUTENANT telling client welcome!")
+                when (role.load()) {
+                    Role.LIEUTENANT -> {
+                        Log.i(TAG, "Client connected to this Lieutenant: $endpointId")
+                        clientEndpointIds.add(endpointId)
+                    }
+
+                    Role.CLIENT -> {
+                        Log.i(TAG, "Client connected to Lieutenant: $endpointId")
+                        connectionTimeout?.cancel()
+                        connectionsClient.stopDiscovery()
+                        connectedLieutenantEndpointId = endpointId
+                    }
+
+                    else -> {}
+                }
             } else {
                 if (role.load() == Role.CLIENT) {
-                    Log.w(TAG, "client retrying to connect.")
-                    runBlocking {
-                        start()
-                    }
-                } else {
-                    Log.e(TAG, "How could a client change rank? ${role.load()}")
-                    runBlocking { start(reboot = true) }
+                    Log.w(TAG, "Client failed to connect to Lieutenant. Restarting discovery.")
+                    connectedLieutenantEndpointId = null
+                    restart()
                 }
             }
         }
 
         override fun onDisconnected(endpointId: String) {
-            clientEndpointIds.remove(endpointId)
-            if (role.load() == Role.CLIENT) {
-                Log.w(TAG, "client disconnected, retrying to connect.")
-                runBlocking {
-                    startClient()
+            when (role.load()) {
+                Role.LIEUTENANT -> {
+                    clientEndpointIds.remove(endpointId)
+                    Log.i(TAG, "Client disconnected from this Lieutenant: $endpointId")
                 }
-            } else {
-                Log.e(TAG, "How could a client change rank? ${role.load()}")
-                runBlocking { start(reboot = true) }
+
+                Role.CLIENT -> {
+                    Log.w(TAG, "Client disconnected from Lieutenant. Restarting discovery.")
+                    connectedLieutenantEndpointId = null
+                    restart()
+                }
+
+                else -> {}
             }
         }
     }
@@ -339,7 +336,7 @@ object NearbyConnectionsManager {
     }
     private val clientEndpointDiscoveryCallback = object : EndpointDiscoveryCallback() {
         override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
-            if (role.load() == Role.CLIENT && mainCommanderEndpointId == null) {
+            if (role.load() == Role.CLIENT && connectedLieutenantEndpointId == null) {
                 connectionsClient.requestConnection(
                     localId, endpointId, clientConnectionLifecycleCallback
                 )
