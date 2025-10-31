@@ -25,6 +25,7 @@ class JavaScriptInjectedAndroid(private val context: Context) {
         val visualizations: Set<String>,
         val id: String,
         val timestamp: Long,
+        val connectedPeerCount: Int,
     )
 
     @JavascriptInterface
@@ -33,7 +34,8 @@ class JavaScriptInjectedAndroid(private val context: Context) {
             Status(
                 visualizations = visualizations,
                 id = CachedPrefs.getId(context),
-                timestamp = System.currentTimeMillis()
+                timestamp = System.currentTimeMillis(),
+                connectedPeerCount = NetworkHolder.connection?.getConnectedPeerCount() ?: 0,
             )
         )
     }

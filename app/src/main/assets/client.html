@@ -33,6 +33,7 @@
             const status = JSON.parse(statusString);
             console.info('Got status', JSON.stringify(status));
             deviceIdSpan.textContent = status.id || '...';
+            peerCountSpan.textContent = status.connectedPeerCount;
         } catch (e) {
             console.error('Failed to fetch status:', e);
         }

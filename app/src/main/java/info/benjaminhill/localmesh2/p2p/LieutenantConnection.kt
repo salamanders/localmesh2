@@ -1,57 +1,56 @@
 package info.benjaminhill.localmesh2.p2p
 
 import android.content.Context
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.merge
-import kotlinx.coroutines.flow.shareIn
-import kotlinx.coroutines.launch
+import android.util.Log
+import info.benjaminhill.localmesh2.WebAppActivity
 
 class LieutenantConnection(
     appContext: Context,
-    private val scope: CoroutineScope,
 ) : P2pRole {
 
-    private val commanderClient = DiscovererConnection(
-        serviceId = CommanderConnection.COMMAND_CHANNEL,
+    private val connectionToCommander = object : DiscovererConnection(
+        serviceId = CommanderConnection.Companion.COMMAND_CHANNEL,
         appContext = appContext,
-    )
-
-    private val clientServer = AdvertiserConnection(
-        serviceId = L2C_CHANNEL,
-        appContext = appContext,
-    )
-
-    override val messages: SharedFlow<NetworkMessage> =
-        merge(commanderClient.messages, clientServer.messages).shareIn(
-            scope,
-            SharingStarted.Eagerly
-        )
-
-    override fun start() {
-        commanderClient.start()
-        clientServer.start()
-
-        // Relay messages from commander to clients
-        scope.launch {
-            commanderClient.messages.collect {
-                clientServer.broadcast(it)
-            }
+    ) {
+        override fun handleReceivedMessage(message: NetworkMessage) {
+            Log.i(TAG, "Received message: ${message.displayTarget}")
+            WebAppActivity.navigateTo(message.displayTarget)
+            // Rebroadcast to all clients
+            connectionToClients.broadcast(message)
         }
     }
 
+
+    private val connectionToClients = object : AdvertiserConnection(
+        serviceId = L2C_CHANNEL,
+        appContext = appContext,
+    ) {
+        override fun handleReceivedMessage(message: NetworkMessage) {
+            Log.e(Companion.TAG, "Lieutenants do not appreciate messsages from Clients.")
+        }
+    }
+
+    override fun start() {
+        Log.w(TAG, "Starting LieutenantConnection")
+        connectionToCommander.start()
+        connectionToClients.start()
+    }
+
     override fun stop() {
-        commanderClient.stop()
-        clientServer.stop()
+        connectionToCommander.stop()
+        connectionToClients.stop()
     }
 
     override fun broadcast(message: NetworkMessage) {
-        // Lieutenants only broadcast to their clients (advertiser endpoints)
-        clientServer.broadcast(message)
+        Log.e(TAG, "Why is a LieutenantConnection broadcasting, it should only relay!")
+        connectionToClients.broadcast(message)
     }
 
+    override fun getConnectedPeerCount(): Int =
+        connectionToCommander.getConnectedPeerCount() + connectionToClients.getConnectedPeerCount()
+
     companion object {
-        const val L2C_CHANNEL = "LM_LIEUTENANT"
+        const val L2C_CHANNEL = "info.benjaminhill.localmesh2.LIEUTENANT"
+        const val TAG = "LieutenantConnection"
     }
 }

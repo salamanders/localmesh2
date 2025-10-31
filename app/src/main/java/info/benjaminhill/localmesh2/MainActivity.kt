@@ -101,7 +101,7 @@ class MainActivity : ComponentActivity() {
                 }
                 Button(onClick = {
                     NetworkHolder.connection =
-                        LieutenantConnection(applicationContext, lifecycleScope)
+                        LieutenantConnection(applicationContext)
                     collectMessages()
                     display("lieutenant.html")
                 }) {
@@ -130,12 +130,8 @@ class MainActivity : ComponentActivity() {
                 Log.e(TAG, "Null NetworkHolder.connection")
                 return@launch
             }
-            Log.w(TAG, "Starting collectMessages")
+            Log.w(TAG, "Starting connection")
             connection.start()
-            connection.messages.collect { message ->
-                Log.i(TAG, "Received message: ${message.displayTarget}")
-                WebAppActivity.navigateTo(message.displayTarget)
-            }
         }
 
     }
