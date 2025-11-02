@@ -6,9 +6,9 @@ import kotlin.time.Instant
 
 @OptIn(ExperimentalTime::class)
 data class Endpoint(
-    val id:String,
-    private var name:String? = null,
-    private var distance:Int? = null
+    val id: String,
+    private var name: String? = null,
+    var distance: Int? = null
 ) {
     var lastUpdate: Instant = Clock.System.now()
     override fun equals(other: Any?): Boolean {
@@ -17,6 +17,7 @@ data class Endpoint(
         other as Endpoint
         return id == other.id
     }
+
     override fun hashCode(): Int = id.hashCode()
 
     fun refreshLastUpdate(): Endpoint {
@@ -24,21 +25,31 @@ data class Endpoint(
         return this
     }
 
-    fun setName(name:String?): Endpoint {
+    fun setLastSeen(timestamp: Long): Endpoint {
+        lastUpdate = Instant.fromEpochMilliseconds(timestamp)
+        return this
+    }
+
+    fun setDistance(distance: Int): Endpoint {
+        this.distance = distance
+        return this
+    }
+
+    fun setName(name: String?): Endpoint {
         this.name = name
         return this
     }
 
     fun isPeer(): Boolean = distance == 1
 
-    fun setIsPeer() :Endpoint {
+    fun setIsPeer(): Endpoint {
         distance = 1
         refreshLastUpdate()
         return this
     }
 
-    fun setIsNotPeer() :Endpoint {
-        if(distance == 1) {
+    fun setIsNotPeer(): Endpoint {
+        if (distance == 1) {
             distance = null
         }
         refreshLastUpdate()
