@@ -13,7 +13,7 @@ data class NetworkMessage(
     val id:String = UUID.randomUUID().toString(),
     // Always include "the journey this message took to get to you". Append yourself when you forward it onwawrds.
     // Id to Instant (string)
-    val breadCrumbs:List<Pair<String, String>>,
+    val breadCrumbs:List<Pair<String, Long>>,
     // Optional command to change the display target.
     val displayTarget: String?,
 

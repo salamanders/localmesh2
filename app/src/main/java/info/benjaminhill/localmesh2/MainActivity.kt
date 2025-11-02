@@ -19,16 +19,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import info.benjaminhill.localmesh2.p2p.ClientConnection
-import info.benjaminhill.localmesh2.p2p.CommanderConnection
-import info.benjaminhill.localmesh2.p2p.LieutenantConnection
-import info.benjaminhill.localmesh2.p2p.NetworkHolder
 import info.benjaminhill.localmesh2.p2p3.HealingMeshConnection
+import info.benjaminhill.localmesh2.p2p3.NetworkHolder
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 class MainActivity : ComponentActivity() {
+
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -83,62 +81,11 @@ class MainActivity : ComponentActivity() {
 
     private fun selectRole() {
         logPermissions()
-        setContent {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.SpaceEvenly,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Button(onClick = {
-                    NetworkHolder.connection = CommanderConnection(applicationContext)
-                    collectMessages()
-                    display("commander.html")
-                }) {
-                    Text("Commander")
-                }
-                Button(onClick = {
-                    NetworkHolder.connection =
-                        LieutenantConnection(applicationContext)
-                    collectMessages()
-                    display("lieutenant.html")
-                }) {
-                    Text("Lieutenant")
-                }
-                Button(onClick = {
-                    NetworkHolder.connection = ClientConnection(applicationContext)
-                    collectMessages()
-                    display("client.html")
-                }) {
-                    Text("Client")
-                }
-
-                Button(onClick = {
-                    Timber.i("Starting Healing Mesh")
-                    val hmc = HealingMeshConnection(applicationContext)
-                    hmc.start()
-                }) {
-                    Text("Healing Mesh")
-                }
-                Button(onClick = {
-                    display("display.html")
-                }) {
-                    Text("Display Locally")
-                }
-            }
-        }
-    }
-
-    private fun collectMessages() {
-        lifecycleScope.launch {
-            val connection = NetworkHolder.connection
-            if (connection == null) {
-                Timber.e("Null NetworkHolder.connection")
-                return@launch
-            }
-            Timber.w("Starting connection")
-            connection.start()
-        }
-
+        Timber.i("Starting Healing Mesh")
+        val hmc = HealingMeshConnection(applicationContext)
+        NetworkHolder.connection = hmc
+        hmc.startNetworking()
+        display("display.html")
     }
 
     private fun display(webAppPath: String) {
@@ -152,6 +99,6 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         Timber.w("MainActivity.onDestroy() called.")
-        NetworkHolder.connection?.stop()
+        NetworkHolder.connection?.stopNetworking()
     }
 }
