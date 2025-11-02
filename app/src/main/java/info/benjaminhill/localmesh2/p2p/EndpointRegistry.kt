@@ -1,17 +1,18 @@
-package info.benjaminhill.localmesh2.p2p3
+package info.benjaminhill.localmesh2.p2p
 
 import timber.log.Timber
 import kotlin.time.Clock
-import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.ExperimentalTime
-import kotlin.time.Instant
 
 /**
  * All endpoints that have ever been seen.  Some may no longer be viable.
  */
 @OptIn(ExperimentalTime::class)
 object EndpointRegistry {
+
+    val localHumanReadableName: String = randomString(5)
+
     private val endpoints = mutableMapOf<String, Endpoint>()
 
     operator fun get(id: String): Endpoint {
@@ -39,7 +40,7 @@ object EndpointRegistry {
 
     fun getPotentialConnections(): Set<Endpoint> = endpoints.values.filter {
         !it.isPeer() &&
-        it.lastUpdate > Clock.System.now().minus(3.minutes)
+                it.lastUpdate > Clock.System.now().minus(3.minutes)
     }.toSet()
 
     const val TAG = "Endpoints"

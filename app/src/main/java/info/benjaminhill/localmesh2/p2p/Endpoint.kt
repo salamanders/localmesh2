@@ -1,4 +1,4 @@
-package info.benjaminhill.localmesh2.p2p3
+package info.benjaminhill.localmesh2.p2p
 
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime

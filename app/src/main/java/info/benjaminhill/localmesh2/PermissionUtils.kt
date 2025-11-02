@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.PermissionInfo
-import android.util.Log
+import timber.log.Timber
 
 /**
  * A utility object for working with Android permissions.
@@ -29,12 +29,10 @@ object PermissionUtils {
                 PackageManager.GET_PERMISSIONS
             )
         } catch (e: Exception) {
-            Log.e("PermissionUtils", "Failed to getDangerousPermissions: ${e.message}")
+            Timber.e(e, "Failed to getDangerousPermissions")
             return emptyArray()
         }
-
         val requestedPermissions = packageInfo.requestedPermissions ?: return emptyArray()
-
         return requestedPermissions.filter { permissionName ->
             try {
                 val permissionInfo = context.packageManager.getPermissionInfo(
@@ -43,10 +41,7 @@ object PermissionUtils {
                 )
                 permissionInfo.protection == PermissionInfo.PROTECTION_DANGEROUS
             } catch (e: Exception) {
-                Log.e(
-                    "PermissionUtils",
-                    "Failed to get permission info for $permissionName: ${e.message}"
-                )
+                Timber.e(e, "Failed to get permission info for $permissionName")
                 false
             }
         }.toTypedArray()

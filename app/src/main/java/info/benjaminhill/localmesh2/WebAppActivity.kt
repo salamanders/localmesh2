@@ -2,7 +2,6 @@ package info.benjaminhill.localmesh2
 
 import android.content.Intent
 import android.os.Bundle
-import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import timber.log.Timber
 
 class WebAppActivity : ComponentActivity() {
     /** Holds the current content path to be displayed in the WebView. */
@@ -17,7 +17,7 @@ class WebAppActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.i(TAG, "onCreate with intent: $intent")
+        Timber.i("onCreate with intent: $intent")
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         // includes enableEdgeToEdge()
@@ -61,7 +61,7 @@ class WebAppActivity : ComponentActivity() {
     private fun handleIntent(intent: Intent?) {
         intent?.extras?.let { bundle ->
             bundle.keySet().forEach { key ->
-                Log.i(TAG, "Intent extra: $key = ${bundle.getString(key)}")
+                Timber.i("Intent extra: $key = ${bundle.getString(key)}")
             }
         }
         pathState.value = intent?.getStringExtra(EXTRA_PATH) ?: "index.html"
@@ -70,15 +70,13 @@ class WebAppActivity : ComponentActivity() {
     /** Should only be called from the static navigateTo */
     private fun navigateTo(path: String) {
         path.takeIf { it.isNotBlank() }?.let { nonBlankPath ->
-            Log.i(TAG, "Navigating to $nonBlankPath")
+            Timber.i("Navigating to $nonBlankPath")
             pathState.value = "$nonBlankPath/index.html"
-        } ?: Log.w(TAG, "navigateTo path was blank.")
+        } ?: Timber.w("navigateTo path was blank.")
     }
 
 
     companion object {
-        private const val TAG = "WebAppActivity"
-
         /** Intent extra key for the content path to display. */
         const val EXTRA_PATH = "info.benjaminhill.localmesh2.EXTRA_PATH"
         private var instance: WebAppActivity? = null
@@ -87,7 +85,7 @@ class WebAppActivity : ComponentActivity() {
                 activity.runOnUiThread {
                     activity.navigateTo(path)
                 }
-            } ?: Log.w(TAG, "navigateTo called but no WebAppActivity instance is available.")
+            } ?: Timber.w("navigateTo called but no WebAppActivity instance is available.")
         }
     }
 }

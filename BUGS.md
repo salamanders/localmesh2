@@ -17,33 +17,42 @@ Bug Template
 
 * Severity: High
 * State: Open
-* Description: When I click a visualization on the commander, neither the Lieutenant or Client react.
+* Description: When I click a visualization on the commander, neither the Lieutenant or Client
+  react.
 * Location in Code
     * app/src/main/java/info/benjaminhill/localmesh2/p2p/AbstractConnection.kt
 * Attempts:
-    * (2025-10-30): Hypothesis: The commander is sending the message, but the other devices are not receiving it.
+    * (2025-10-30): Hypothesis: The commander is sending the message, but the other devices are not
+      receiving it.
         * Evidence:
             * Logcat on the commander shows the message being sent.
             * Logcat on the lieutenant and client are empty.
-    * (2025-10-30): Hypothesis: The commander thinks it has no downstream endpoints, so it's not even trying to send the message.
+    * (2025-10-30): Hypothesis: The commander thinks it has no downstream endpoints, so it's not
+      even trying to send the message.
         * Evidence:
             * Logcat on the commander shows "No downstream endpoints to broadcast to."
-            * Logcat on the commander shows "Advertising: onConnectionResult failure for VBQS. Code: 13"
+            * Logcat on the commander shows "Advertising: onConnectionResult failure for VBQS. Code:
+              13"
 
 ---
 
 * Severity: High
 * State: Open
-* Description: The application does not reflect the connection status of other devices in the UI. The logs show that connections are being established, but the UI does not update.
+* Description: The application does not reflect the connection status of other devices in the UI.
+  The logs show that connections are being established, but the UI does not update.
 * Location in Code
     * app/src/main/java/info/benjaminhill/localmesh2/p2p/AbstractConnection.kt
     * app/src/main/java/info/benjaminhill/localmesh2/WebAppActivity.kt
     * app/src/main/java/info/benjaminhill/localmesh2/JavaScriptInjectedAndroid.kt
 * Attempts:
-    * (2025-10-30): Hypothesis: The UI is not being updated because there is no mechanism to observe the changes in the `ourClients` and `ourDiscoveredControllers` sets in `AbstractConnection.kt`.
+    * (2025-10-30): Hypothesis: The UI is not being updated because there is no mechanism to observe
+      the changes in the `ourClients` and `ourDiscoveredControllers` sets in
+      `AbstractConnection.kt`.
         * Evidence:
-            * Logcat analysis shows that connections are being established successfully at the Nearby Connections API level.
-            * Code review of `WebAppActivity.kt` and `JavaScriptInjectedAndroid.kt` confirms that there is no code to observe the connection state from `AbstractConnection.kt`.
+            * Logcat analysis shows that connections are being established successfully at the
+              Nearby Connections API level.
+            * Code review of `WebAppActivity.kt` and `JavaScriptInjectedAndroid.kt` confirms that
+              there is no code to observe the connection state from `AbstractConnection.kt`.
 
 ---
 

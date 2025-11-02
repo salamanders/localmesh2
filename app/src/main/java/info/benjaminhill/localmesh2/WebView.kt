@@ -1,7 +1,6 @@
 package info.benjaminhill.localmesh2
 
 import android.annotation.SuppressLint
-import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.PermissionRequest
@@ -15,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import timber.log.Timber
 
 /**
  * A self-contained, full-screen Composable for displaying a web page.
@@ -54,16 +54,14 @@ fun FullScreenWebView(url: String) {
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
-                        Log.i(localTag, "WebViewClient onPageFinished: $url")
+                        Timber.i( "WebViewClient onPageFinished: $url")
                         // Check if the magic function exists, and if so, call it.
                         view?.evaluateJavascript("typeof autoStartInWebView === 'function'") { result ->
                             if ("true" == result) {
-                                Log.i(
-                                    localTag, "Found autoStartInWebView in $url, executing."
-                                )
+                                Timber.i("Found autoStartInWebView in $url, executing.")
                                 view.evaluateJavascript("autoStartInWebView();", null)
                             } else {
-                                Log.i(localTag, "No autoStartInWebView in $url, skipping.")
+                                Timber.i( "No autoStartInWebView in $url, skipping.")
                             }
                         }
                     }
@@ -76,15 +74,12 @@ fun FullScreenWebView(url: String) {
                         super.onReceivedError(view, request, error)
                         val requestUrl = request?.url?.toString() ?: ""
                         val description = error?.description ?: ""
-                        Log.e(localTag, "WebView onReceivedError: '$description' on $requestUrl")
+                        Timber.e("WebView onReceivedError: '$description' on $requestUrl")
                     }
                 }
                 webChromeClient = object : WebChromeClient() {
                     override fun onPermissionRequest(request: PermissionRequest) {
-                        Log.i(
-                            localTag,
-                            "Granting permission for ${request.resources.joinToString()}"
-                        )
+                        Timber.i("Granting permission for ${request.resources.joinToString()}")
                         request.grant(request.resources)
                     }
                 }
@@ -93,7 +88,7 @@ fun FullScreenWebView(url: String) {
             }
         },
         update = {
-            Log.i(localTag, "Updating URL to: $url")
+            Timber.i( "Updating URL to: $url")
             it.loadUrl(url)
         },
         modifier = Modifier.fillMaxSize()

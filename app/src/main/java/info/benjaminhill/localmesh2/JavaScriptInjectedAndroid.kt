@@ -3,12 +3,13 @@
 package info.benjaminhill.localmesh2
 
 import android.content.Context
-import android.util.Log
 import android.webkit.JavascriptInterface
-import info.benjaminhill.localmesh2.p2p3.NetworkHolder
-import info.benjaminhill.localmesh2.p2p3.NetworkMessage
+import info.benjaminhill.localmesh2.p2p.EndpointRegistry
+import info.benjaminhill.localmesh2.p2p.NetworkHolder
+import info.benjaminhill.localmesh2.p2p.NetworkMessage
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import timber.log.Timber
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 @Suppress("unused")
@@ -33,7 +34,7 @@ class JavaScriptInjectedAndroid(private val context: Context) {
         return Json.encodeToString(
             Status(
                 visualizations = visualizations,
-                id = CachedPrefs.getId(context),
+                id = EndpointRegistry.localHumanReadableName,
                 timestamp = System.currentTimeMillis(),
                 connectedPeerCount = NetworkHolder.connection?.getDirectConnectionCount() ?: 0,
             )
@@ -42,7 +43,7 @@ class JavaScriptInjectedAndroid(private val context: Context) {
 
     @JavascriptInterface
     fun sendPeerDisplayCommand(folder: String) {
-        Log.d(TAG, "sendPeerDisplayCommand: $folder")
+        Timber.d("sendPeerDisplayCommand: $folder")
         val message = NetworkMessage(
             breadCrumbs = emptyList(),
             displayTarget = folder

@@ -18,10 +18,8 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
-import info.benjaminhill.localmesh2.p2p3.HealingMeshConnection
-import info.benjaminhill.localmesh2.p2p3.NetworkHolder
-import kotlinx.coroutines.launch
+import info.benjaminhill.localmesh2.p2p.HealingMeshConnection
+import info.benjaminhill.localmesh2.p2p.NetworkHolder
 import timber.log.Timber
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 

@@ -1,18 +1,17 @@
-package info.benjaminhill.localmesh2.p2p3
+package info.benjaminhill.localmesh2.p2p
 
 import android.content.Context
-import android.util.Log
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.AdvertisingOptions
 import com.google.android.gms.nearby.connection.ConnectionInfo
 import com.google.android.gms.nearby.connection.ConnectionLifecycleCallback
 import com.google.android.gms.nearby.connection.ConnectionResolution
 import com.google.android.gms.nearby.connection.ConnectionsClient
-import com.google.android.gms.nearby.connection.Payload
-import com.google.android.gms.nearby.connection.PayloadCallback
 import com.google.android.gms.nearby.connection.DiscoveredEndpointInfo
 import com.google.android.gms.nearby.connection.DiscoveryOptions
 import com.google.android.gms.nearby.connection.EndpointDiscoveryCallback
+import com.google.android.gms.nearby.connection.Payload
+import com.google.android.gms.nearby.connection.PayloadCallback
 import com.google.android.gms.nearby.connection.PayloadTransferUpdate
 import com.google.android.gms.nearby.connection.Strategy
 import kotlinx.coroutines.CoroutineScope
@@ -27,7 +26,6 @@ import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import timber.log.Timber
 import kotlin.random.Random
-import kotlin.time.ExperimentalTime
 
 /**
  * Manages a self-healing mesh network using the Google Nearby Connections API.
@@ -50,13 +48,9 @@ import kotlin.time.ExperimentalTime
 class HealingMeshConnection(appContext: Context) {
 
     private val connectionsClient: ConnectionsClient = Nearby.getConnectionsClient(appContext)
-    private val localHumanReadableName: String = randomString(5)
     private val scope = CoroutineScope(Job() + Dispatchers.IO)
     private var maintenanceTicker: Job? = null
     private var gossipTicker: Job? = null
-
-    /** Map of MessageUuids to the timestamp we first saw them. Used for de-duplication. */
-    private val seenMessageIds = mutableMapOf<String, Long>()
 
     /** The set of peers we are currently trying to connect to. */
     private val pendingConnections = mutableSetOf<String>()
@@ -119,15 +113,13 @@ class HealingMeshConnection(appContext: Context) {
             val message = Cbor.decodeFromByteArray<NetworkMessage>(payload.asBytes()!!)
 
             // De-duplication
-            if (message.id in seenMessageIds) {
+            if (!NetworkMessageRegistry.isFirstSeen(message)) {
                 Timber.d("Ignoring duplicate message ${message.id} from $endpointId")
                 return
             }
-            seenMessageIds[message.id] = System.currentTimeMillis()
-
             processBreadcrumbs(message.breadCrumbs)
 
-            if (message.displayTarget == localHumanReadableName) {
+            if (message.displayTarget == EndpointRegistry.localHumanReadableName) {
                 Timber.i("COMMAND: Received command: $message")
                 // TODO: Actually do something with the command
             }
@@ -142,14 +134,14 @@ class HealingMeshConnection(appContext: Context) {
 
     fun startNetworking() {
         connectionsClient.startAdvertising(
-            localHumanReadableName,
+            EndpointRegistry.localHumanReadableName,
             MESH_SERVICE_ID,
             connectionLifecycleCallback,
             AdvertisingOptions.Builder().setStrategy(STRATEGY).build()
         ).addOnSuccessListener {
-            Timber.i("Advertising started for service $localHumanReadableName.")
+            Timber.i("Advertising started for service $EndpointRegistry.localHumanReadableName.")
         }.addOnFailureListener { e ->
-            Timber.i(e, "Advertising failed for service $localHumanReadableName.")
+            Timber.i(e, "Advertising failed for service $EndpointRegistry.localHumanReadableName.")
         }
 
         connectionsClient.startDiscovery(
@@ -190,19 +182,19 @@ class HealingMeshConnection(appContext: Context) {
     }
 
     private fun runMaintenance() {
-        pruneMessageCache()
         pruneEndpointRegistry()
         healConnections()
     }
 
     private fun healConnections() {
         if (directConnections.size < MIN_CONNECTIONS) {
-            val target = discoverablePeers.firstOrNull { it !in directConnections && it !in pendingConnections }
+            val target =
+                discoverablePeers.firstOrNull { it !in directConnections && it !in pendingConnections }
             if (target != null) {
                 Timber.i("HEAL: Attempting to connect to $target")
                 pendingConnections.add(target)
                 connectionsClient.requestConnection(
-                    localHumanReadableName,
+                    EndpointRegistry.localHumanReadableName,
                     target,
                     connectionLifecycleCallback
                 ).addOnFailureListener { e ->
@@ -213,24 +205,14 @@ class HealingMeshConnection(appContext: Context) {
         }
     }
 
-    private fun pruneMessageCache() {
-        val now = System.currentTimeMillis()
-        val iterator = seenMessageIds.iterator()
-        while (iterator.hasNext()) {
-            val entry = iterator.next()
-            if (now - entry.value > MESSAGE_CACHE_EXPIRY_MS) {
-                iterator.remove()
-            }
-        }
-    }
 
     private fun sendGossip() {
         Timber.d("GOSSIP: Sending gossip")
         val gossip = NetworkMessage(
-            breadCrumbs = listOf(localHumanReadableName to System.currentTimeMillis()),
+            breadCrumbs = listOf(EndpointRegistry.localHumanReadableName to System.currentTimeMillis()),
             displayTarget = null
         )
-        seenMessageIds[gossip.id] = System.currentTimeMillis()
+        NetworkMessageRegistry.isFirstSeen(gossip)
         forwardMessage(gossip, null)
     }
 
@@ -242,7 +224,7 @@ class HealingMeshConnection(appContext: Context) {
         crumbs.forEachIndexed { i, (peerId, timestamp) ->
             val hopCount = i + 1
             val existing = EndpointRegistry[peerId]
-            if (hopCount < existing.distance ?: Int.MAX_VALUE) {
+            if (hopCount < (existing.distance ?: Int.MAX_VALUE)) {
                 Timber.d("Updating $peerId to distance $hopCount")
                 existing.apply {
                     setDistance(hopCount)
@@ -254,7 +236,7 @@ class HealingMeshConnection(appContext: Context) {
 
     @OptIn(ExperimentalSerializationApi::class)
     private fun forwardMessage(message: NetworkMessage, fromEndpointId: String?) {
-        val newCrumbs = message.breadCrumbs + (localHumanReadableName to System.currentTimeMillis())
+        val newCrumbs = message.breadCrumbs + (EndpointRegistry.localHumanReadableName to System.currentTimeMillis())
         val msgToForward = message.copy(breadCrumbs = newCrumbs)
         val payload = Payload.fromBytes(Cbor.encodeToByteArray(msgToForward))
 
@@ -271,7 +253,7 @@ class HealingMeshConnection(appContext: Context) {
 
     fun broadcast(message: NetworkMessage) {
         Timber.d("BROADCAST: $message")
-        seenMessageIds[message.id] = System.currentTimeMillis()
+        NetworkMessageRegistry.isFirstSeen(message)
         forwardMessage(message, null)
     }
 
@@ -281,7 +263,7 @@ class HealingMeshConnection(appContext: Context) {
         Timber.i("Manually stopped")
         connectionsClient.stopAllEndpoints()
         EndpointRegistry.clear()
-        seenMessageIds.clear()
+        NetworkMessageRegistry.clear()
         pendingConnections.clear()
         directConnections.clear()
         discoverablePeers.clear()
@@ -292,6 +274,7 @@ class HealingMeshConnection(appContext: Context) {
         private val STRATEGY = Strategy.P2P_CLUSTER
         private const val MIN_CONNECTIONS = 2
         private const val MAX_CONNECTIONS = 4
-        private const val MESSAGE_CACHE_EXPIRY_MS = 2 * 60 * 1000 // 2 minutes
+
+
     }
 }
