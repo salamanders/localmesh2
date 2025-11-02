@@ -42,6 +42,4 @@ object EndpointRegistry {
         !it.isPeer() &&
                 it.lastUpdate > Clock.System.now().minus(3.minutes)
     }.toSet()
-
-    const val TAG = "Endpoints"
 }

@@ -17,11 +17,13 @@ object NetworkMessageRegistry {
     /** Map of MessageUuids to the timestamp we first saw them. Used for de-duplication. */
     private val seenMessageIds = mutableMapOf<String, Pair<NetworkMessage, Instant>>()
 
-    private val pruneMessageCache = CoroutineScope(Job() + Dispatchers.IO).launch {
-        while (isActive) {
-            val ago = Clock.System.now().minus(MESSAGE_CACHE_EXPIRY)
-            seenMessageIds.entries.removeIf { it.value.second < ago }
-            delay(10.seconds)
+    init {
+        CoroutineScope(Job() + Dispatchers.IO).launch {
+            while (isActive) {
+                val ago = Clock.System.now().minus(MESSAGE_CACHE_EXPIRY)
+                seenMessageIds.entries.removeIf { it.value.second < ago }
+                delay(10.seconds)
+            }
         }
     }
 

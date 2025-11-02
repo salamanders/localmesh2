@@ -26,8 +26,6 @@ import timber.log.Timber
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun FullScreenWebView(url: String) {
-    val localTag = "FullScreenWebView"
-
     AndroidView(
         factory = { context ->
             WebView(context).apply {

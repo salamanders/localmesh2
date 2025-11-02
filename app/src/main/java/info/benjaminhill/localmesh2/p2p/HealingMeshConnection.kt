@@ -21,9 +21,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.cbor.Cbor
-import kotlinx.serialization.decodeFromByteArray
-import kotlinx.serialization.encodeToByteArray
 import timber.log.Timber
 import kotlin.random.Random
 
@@ -55,12 +52,6 @@ class HealingMeshConnection(appContext: Context) {
     /** The set of peers we are currently trying to connect to. */
     private val pendingConnections = mutableSetOf<String>()
 
-    /** The set of peers we are physically connected to. */
-    private val directConnections = mutableSetOf<String>()
-
-    /** The set of peers we can see right now. */
-    private val discoverablePeers = mutableSetOf<String>()
-
     /** Handles all connection lifecycle events, both incoming and outgoing. */
     private val connectionLifecycleCallback = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, connectionInfo: ConnectionInfo) {
@@ -69,11 +60,11 @@ class HealingMeshConnection(appContext: Context) {
                 refreshLastUpdate()
                 setName(connectionInfo.endpointName)
             }
-            if (directConnections.size < MAX_CONNECTIONS) {
+            if (EndpointRegistry.numConnectedPeers() < MAX_CONNECTIONS) {
                 Timber.i("Accepting connection from $endpointId")
                 connectionsClient.acceptConnection(endpointId, payloadCallback)
             } else {
-                Timber.i("Rejecting connection from $endpointId, already have ${directConnections.size} connections.")
+                Timber.i("Rejecting connection from $endpointId, already have ${EndpointRegistry.numConnectedPeers()} connections.")
                 connectionsClient.rejectConnection(endpointId)
             }
         }
@@ -82,21 +73,19 @@ class HealingMeshConnection(appContext: Context) {
             pendingConnections.remove(endpointId)
             if (result.status.isSuccess) {
                 Timber.i("onConnectionResult: SUCCESS for $endpointId")
-                directConnections.add(endpointId)
                 EndpointRegistry[endpointId].apply {
                     setIsPeer() // Sets distance to 1
                     refreshLastUpdate()
                 }
             } else {
                 Timber.w("onConnectionResult: FAILURE for $endpointId, status: ${result.status.statusMessage} (${result.status.statusCode})")
-                directConnections.remove(endpointId)
+                EndpointRegistry[endpointId].setIsNotPeer()
                 // Don't mark as not-peer, they might still be reachable through gossip
             }
         }
 
         override fun onDisconnected(endpointId: String) {
             Timber.i("onDisconnected from $endpointId")
-            directConnections.remove(endpointId)
             EndpointRegistry[endpointId].setIsNotPeer() // Sets distance to null
         }
     }
@@ -110,7 +99,7 @@ class HealingMeshConnection(appContext: Context) {
                 Timber.w("Received non-bytes payload from $endpointId, ignoring.")
                 return
             }
-            val message = Cbor.decodeFromByteArray<NetworkMessage>(payload.asBytes()!!)
+            val message = NetworkMessage.fromByteArray(payload.asBytes()!!)
 
             // De-duplication
             if (!NetworkMessageRegistry.isFirstSeen(message)) {
@@ -150,13 +139,16 @@ class HealingMeshConnection(appContext: Context) {
                 override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
                     if (info.serviceId == MESH_SERVICE_ID) {
                         Timber.i("Discovery: Found endpoint $endpointId (${info.endpointName})")
-                        discoverablePeers.add(endpointId)
+                        EndpointRegistry[endpointId].apply {
+                            setName(info.endpointName)
+                            refreshLastUpdate()
+                        }
                     }
                 }
 
                 override fun onEndpointLost(endpointId: String) {
                     Timber.i("Discovery: Lost endpoint $endpointId")
-                    discoverablePeers.remove(endpointId)
+                    // No action needed, prune takes care of it.
                 }
             },
             DiscoveryOptions.Builder().setStrategy(STRATEGY).build()
@@ -187,19 +179,19 @@ class HealingMeshConnection(appContext: Context) {
     }
 
     private fun healConnections() {
-        if (directConnections.size < MIN_CONNECTIONS) {
-            val target =
-                discoverablePeers.firstOrNull { it !in directConnections && it !in pendingConnections }
+        if (EndpointRegistry.numConnectedPeers() < MIN_CONNECTIONS) {
+            val target = EndpointRegistry.getPotentialConnections()
+                .firstOrNull { it.id !in pendingConnections }
             if (target != null) {
-                Timber.i("HEAL: Attempting to connect to $target")
-                pendingConnections.add(target)
+                Timber.i("HEAL: Attempting to connect to ${target.id}")
+                pendingConnections.add(target.id)
                 connectionsClient.requestConnection(
                     EndpointRegistry.localHumanReadableName,
-                    target,
+                    target.id,
                     connectionLifecycleCallback
                 ).addOnFailureListener { e ->
-                    Timber.w(e, "HEAL: Failed to request connection to $target")
-                    pendingConnections.remove(target)
+                    Timber.w(e, "HEAL: Failed to request connection to ${target.id}")
+                    pendingConnections.remove(target.id)
                 }
             }
         }
@@ -238,10 +230,10 @@ class HealingMeshConnection(appContext: Context) {
     private fun forwardMessage(message: NetworkMessage, fromEndpointId: String?) {
         val newCrumbs = message.breadCrumbs + (EndpointRegistry.localHumanReadableName to System.currentTimeMillis())
         val msgToForward = message.copy(breadCrumbs = newCrumbs)
-        val payload = Payload.fromBytes(Cbor.encodeToByteArray(msgToForward))
+        val payload = Payload.fromBytes(msgToForward.toByteArray())
 
         val pathIds = newCrumbs.map { it.first }
-        val targets = directConnections.filter { it != fromEndpointId && it !in pathIds }
+        val targets = EndpointRegistry.getPeerIds().filter { it != fromEndpointId && it !in pathIds }
 
         if (targets.isNotEmpty()) {
             Timber.d("Forwarding message ${message.id} from $fromEndpointId to $targets")
@@ -249,7 +241,7 @@ class HealingMeshConnection(appContext: Context) {
         }
     }
 
-    fun getDirectConnectionCount(): Int = directConnections.size
+    fun getDirectConnectionCount(): Int = EndpointRegistry.numConnectedPeers()
 
     fun broadcast(message: NetworkMessage) {
         Timber.d("BROADCAST: $message")
@@ -265,8 +257,6 @@ class HealingMeshConnection(appContext: Context) {
         EndpointRegistry.clear()
         NetworkMessageRegistry.clear()
         pendingConnections.clear()
-        directConnections.clear()
-        discoverablePeers.clear()
     }
 
     companion object {
