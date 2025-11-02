@@ -61,6 +61,9 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
+    // Logging
+    implementation(libs.timber)
+
     // App-Specific
     implementation(libs.google.play.services.nearby)
     implementation(libs.kotlinx.coroutines.core)

@@ -5,7 +5,6 @@ package info.benjaminhill.localmesh2
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.util.Log
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -24,19 +23,19 @@ import info.benjaminhill.localmesh2.p2p.ClientConnection
 import info.benjaminhill.localmesh2.p2p.CommanderConnection
 import info.benjaminhill.localmesh2.p2p.LieutenantConnection
 import info.benjaminhill.localmesh2.p2p.NetworkHolder
+import info.benjaminhill.localmesh2.p2p3.HealingMeshConnection
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 class MainActivity : ComponentActivity() {
-    @Suppress("PrivatePropertyName")
-    private val TAG = "MainActivity"
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions.all { it.value }) {
             selectRole()
         } else {
-            Log.e(TAG, "User denied permissions.")
+            Timber.e("User denied permissions.")
             Toast.makeText(
                 this, "All permissions are required for LocalMesh to function.", Toast.LENGTH_LONG
             ).show()
@@ -45,6 +44,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Timber.plant(Timber.DebugTree())
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         val dangerousPermissions = PermissionUtils.getDangerousPermissions(this)
@@ -53,7 +53,7 @@ class MainActivity : ComponentActivity() {
         }
 
         if (allPermissionsGranted) {
-            Log.i(TAG, "Permissions already granted, starting mesh.")
+            Timber.i("Permissions already granted, starting mesh.")
             selectRole()
         } else {
             setContent {
@@ -77,10 +77,7 @@ class MainActivity : ComponentActivity() {
             packageName,
             PackageManager.GET_PERMISSIONS
         ).requestedPermissions?.forEach { permission ->
-            Log.d(
-                "PermCheck",
-                "$permission: ${if (checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) "GRANTED" else "DENIED"}"
-            )
+            Timber.d("$permission: ${if (checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) "GRANTED" else "DENIED"}")
         }
     }
 
@@ -114,6 +111,14 @@ class MainActivity : ComponentActivity() {
                 }) {
                     Text("Client")
                 }
+
+                Button(onClick = {
+                    Timber.i("Starting Healing Mesh")
+                    val hmc = HealingMeshConnection(applicationContext)
+                    hmc.start()
+                }) {
+                    Text("Healing Mesh")
+                }
                 Button(onClick = {
                     display("display.html")
                 }) {
@@ -127,10 +132,10 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             val connection = NetworkHolder.connection
             if (connection == null) {
-                Log.e(TAG, "Null NetworkHolder.connection")
+                Timber.e("Null NetworkHolder.connection")
                 return@launch
             }
-            Log.w(TAG, "Starting connection")
+            Timber.w("Starting connection")
             connection.start()
         }
 
@@ -146,7 +151,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.w(TAG, "MainActivity.onDestroy() called.")
+        Timber.w("MainActivity.onDestroy() called.")
         NetworkHolder.connection?.stop()
     }
 }
