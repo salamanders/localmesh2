@@ -11,6 +11,12 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import timber.log.Timber
 
+/**
+ * An activity dedicated to hosting the application's `WebView`.
+ * This activity is responsible for loading the web-based UI and injecting the
+ * `JavaScriptInjectedAndroid` bridge to enable communication between the Kotlin backend
+ * and the JavaScript frontend.
+ */
 class WebAppActivity : ComponentActivity() {
     /** Holds the current content path to be displayed in the WebView. */
     private val pathState = mutableStateOf<String?>(null)

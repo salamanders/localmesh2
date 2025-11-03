@@ -12,6 +12,14 @@ import kotlinx.serialization.json.Json
 import timber.log.Timber
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
+/**
+ * Provides a bridge for the WebView's JavaScript to call native Kotlin functions.
+ * This class is injected into the WebView and its methods are exposed to the JavaScript code.
+ *
+ * It is responsible for:
+ * - Providing status information about the device and the mesh network to the web UI.
+ * - Receiving commands from the web UI and broadcasting them to the mesh network.
+ */
 @Suppress("unused")
 class JavaScriptInjectedAndroid(private val context: Context) {
 

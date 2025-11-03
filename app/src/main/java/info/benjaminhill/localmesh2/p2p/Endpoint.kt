@@ -4,6 +4,14 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
+/**
+ * Represents another device in the network.
+ *
+ * This data class holds the state of a known endpoint, including its unique ID,
+ * human-readable name, and its distance from the local device in network hops.
+ * It also tracks the last time a message was received from or about this endpoint
+ * to determine its freshness.
+ */
 @OptIn(ExperimentalTime::class)
 data class Endpoint(
     val id: String,

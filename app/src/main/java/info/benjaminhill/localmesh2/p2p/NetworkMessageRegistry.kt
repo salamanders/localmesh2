@@ -12,6 +12,13 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
+/**
+ * A singleton object responsible for de-duplicating incoming `NetworkMessage`s.
+ *
+ * It maintains a cache of recently seen message IDs. This is a critical component
+ * of the gossip protocol to prevent broadcast storms and infinite message loops.
+ * A background coroutine periodically prunes the cache to prevent it from growing indefinitely.
+ */
 @OptIn(ExperimentalTime::class)
 object NetworkMessageRegistry {
     /** Map of MessageUuids to the timestamp we first saw them. Used for de-duplication. */
