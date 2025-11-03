@@ -73,12 +73,16 @@ class HealingMeshConnection(appContext: Context) {
 
         override fun onEndpointLost(endpointId: String) {
             Timber.i("Discovery: Lost endpoint $endpointId")
-            discoveredEndpoints.remove(endpointId)
+            if (discoveredEndpoints.remove(endpointId) == null) {
+                Timber.w("Tried to remove lost endpoint $endpointId from discoveredEndpoints, but it was not present.")
+            }
             // Robustness: Clean up any state if a lost endpoint was pending or established.
-            pendingConnections.remove(endpointId)
-            if (establishedConnections.containsKey(endpointId)) {
-                establishedConnections.remove(endpointId)
+            if (!pendingConnections.remove(endpointId)) {
+                Timber.w("Tried to remove lost endpoint $endpointId from pendingConnections, but it was not present.")
+            }
+            if (establishedConnections.remove(endpointId) != null) {
                 // The Graph Manager loop will handle finding a new connection.
+                Timber.d("Removed lost endpoint $endpointId from establishedConnections.")
             } else {
                 Timber.d("Discovery: Lost endpoint $endpointId was not an established connection.")
             }
@@ -89,17 +93,18 @@ class HealingMeshConnection(appContext: Context) {
     private val connectionLifecycleCallback = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, connectionInfo: ConnectionInfo) {
             Timber.i("onConnectionInitiated from ${connectionInfo.endpointName} ($endpointId)")
-            if (pendingConnections.contains(endpointId)) {
+            if (pendingConnections.add(endpointId)) {
+                // Always accept the connection. We will prune in onConnectionResult.
+                connectionsClient.acceptConnection(endpointId, payloadCallback)
+            } else {
                 Timber.w("Duplicate onConnectionInitiated for $endpointId, ignoring.")
-                return
             }
-            // Always accept the connection. We will prune in onConnectionResult.
-            pendingConnections.add(endpointId)
-            connectionsClient.acceptConnection(endpointId, payloadCallback)
         }
 
         override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
-            pendingConnections.remove(endpointId) // No longer pending
+            if (!pendingConnections.remove(endpointId)) {
+                Timber.w("onConnectionResult for $endpointId, but it was not in pendingConnections.")
+            }
 
             when (result.status.statusCode) {
                 ConnectionsStatusCodes.STATUS_OK -> {
@@ -137,7 +142,9 @@ class HealingMeshConnection(appContext: Context) {
 
         override fun onDisconnected(endpointId: String) {
             Timber.i("onDisconnected from $endpointId")
-            establishedConnections.remove(endpointId)
+            if (establishedConnections.remove(endpointId) == null) {
+                Timber.w("onDisconnected from $endpointId, but it was not in establishedConnections.")
+            }
         }
     }
 
@@ -260,14 +267,19 @@ class HealingMeshConnection(appContext: Context) {
             if (candidates.isNotEmpty()) {
                 val candidateId = candidates.random()
                 Timber.i("GRAPH_MANAGER: Current size is ${establishedConnections.size} so attempting to connect to random $candidateId")
-                pendingConnections.add(candidateId)
-                connectionsClient.requestConnection(
-                    EndpointRegistry.localHumanReadableName,
-                    candidateId,
-                    connectionLifecycleCallback
-                ).addOnFailureListener {
-                    Timber.w("GRAPH_MANAGER: Failed to request connection to $candidateId")
-                    pendingConnections.remove(candidateId)
+                if (pendingConnections.add(candidateId)) {
+                    connectionsClient.requestConnection(
+                        EndpointRegistry.localHumanReadableName,
+                        candidateId,
+                        connectionLifecycleCallback
+                    ).addOnFailureListener {
+                        Timber.w("GRAPH_MANAGER: Failed to request connection to $candidateId")
+                        if (!pendingConnections.remove(candidateId)) {
+                            Timber.e("Failed to remove $candidateId from pendingConnections after a failed connection request.")
+                        }
+                    }
+                } else {
+                    Timber.w("GRAPH_MANAGER: Tried to connect to $candidateId, but it was already in pendingConnections.")
                 }
             } else {
                 Timber.w("GRAPH_MANAGER: Current size is ${establishedConnections.size} but no candidates to connect to.")
