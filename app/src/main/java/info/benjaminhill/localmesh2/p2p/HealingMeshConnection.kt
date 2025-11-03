@@ -272,6 +272,8 @@ class HealingMeshConnection(appContext: Context) {
             } else {
                 Timber.w("GRAPH_MANAGER: Current size is ${establishedConnections.size} but no candidates to connect to.")
             }
+        } else {
+            Timber.d("GRAPH_MANAGER: At capacity (${establishedConnections.size}/$K_DEGREE), not seeking new connections.")
         }
     }
 

@@ -61,6 +61,8 @@ class WebAppActivity : ComponentActivity() {
         super.onPause()
         if (instance == this) {
             instance = null
+        } else {
+            Timber.d("onPause: instance is not this, so not setting to null.")
         }
     }
 
