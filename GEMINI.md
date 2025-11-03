@@ -26,11 +26,7 @@ The system is composed of these main components:
   interacts with the backend through a JavaScript interface.
 * **`localmesh2` Android App:** The native Android application that provides the
   Android-specific implementations and UI.
-    * `NearbyConnectionsManager`: Wraps the Google Play Services Nearby Connections API and acts as
-      the "hands" of the network, translating commands from the `TopologyOptimizer` into hardware
-      operations.
-    * `TopologyOptimizer`: The "brains" of the network. It contains all the logic for analyzing
-      network health and making high-level decisions to optimize the network topology.
+    * `HealingMeshConnection`: The core of the networking layer. It manages advertising, discovery, connections, and the gossip protocol.
     * `WebAppActivity`: The Android activity for hosting the `WebView`.
     * `JavaScriptInjectedAndroid`: The bridge that allows communication between the WebView frontend
       and the Kotlin backend.
@@ -41,7 +37,7 @@ The system is composed of these main components:
 ## 3. Communication Protocol
 
 The project uses a gossip protocol to broadcast `NetworkMessage` objects to all connected peers. The
-`NearbyConnectionsManager` implements a "Check, Process, Forward" mechanism to ensure messages reach
+`HealingMeshConnection` implements a "Check, Process, Forward" mechanism to ensure messages reach
 every node exactly once while preventing infinite loops.
 
 ---

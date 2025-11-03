@@ -23,6 +23,14 @@ import info.benjaminhill.localmesh2.p2p.NetworkHolder
 import timber.log.Timber
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
+/**
+ * The main entry point of the application.
+ *
+ * This activity is responsible for:
+ * - Requesting necessary permissions from the user.
+ * - Initializing and starting the `HealingMeshConnection`.
+ * - Launching the `WebAppActivity` to display the web-based UI.
+ */
 class MainActivity : ComponentActivity() {
 
     private val requestPermissionLauncher = registerForActivityResult(

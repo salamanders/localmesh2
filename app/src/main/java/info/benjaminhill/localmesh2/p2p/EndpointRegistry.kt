@@ -6,7 +6,13 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.ExperimentalTime
 
 /**
- * All endpoints that have ever been seen.  Some may no longer be viable.
+ * A singleton object that acts as the single source of truth for all known endpoints in the network.
+ *
+ * It maintains a map of endpoint IDs to `Endpoint` objects. This registry is responsible for:
+ * - Creating new `Endpoint` entries when a new endpoint is discovered.
+ * - Providing access to the state of any known endpoint.
+ * - Pruning stale endpoints that haven't been seen recently.
+ * - Providing lists of endpoints that are direct peers or potential connection candidates.
  */
 @OptIn(ExperimentalTime::class)
 object EndpointRegistry {

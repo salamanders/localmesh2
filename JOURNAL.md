@@ -1,3 +1,36 @@
+# Summary of Current Architecture
+
+This section summarizes the state of the project after the major refactor. The core of the application is a self-healing mesh network built on the Google Nearby Connections API.
+
+## Core Concepts
+
+*   **Decentralized Mesh:** The network is a peer-to-peer mesh with no central server. All nodes are equal.
+*   **Resilience:** The network is designed to be self-healing. The `HealingMeshConnection` class contains logic to automatically discover peers and form new connections if the number of connections drops below a minimum threshold.
+*   **Gossip Protocol:** Nodes periodically broadcast "gossip" messages containing their own identity. When other nodes receive these, they forward them, adding themselves to a `breadCrumbs` list. This allows all nodes to learn about the existence and approximate distance (in hops) to other nodes in the network, even those they are not directly connected to.
+
+## Key Components
+
+*   **`HealingMeshConnection.kt`**: This is the central class for all networking. It manages:
+    *   Advertising and discovering other nodes.
+    *   Handling the lifecycle of connections (initiating, accepting, disconnecting).
+    *   Running background jobs for maintenance:
+        *   A `maintenanceTicker` to prune old endpoints and `healConnections` by connecting to new peers if needed.
+        *   A `gossipTicker` to periodically send out gossip messages to maintain network awareness.
+    *   Processing incoming data (`Payloads`), forwarding messages, and preventing broadcast loops.
+
+*   **`EndpointRegistry.kt`**: A singleton object that acts as the single source of truth for all known endpoints (nodes) in the network. It stores information about each endpoint, such as its ID, name, and its distance in hops from the local device. It includes a `prune` function to remove stale entries.
+
+*   **`NetworkMessage.kt`**: The canonical data structure for all messages sent over the network. It is serialized using CBOR for efficiency. Key fields include:
+    *   `id`: A unique identifier for the message.
+    *   `breadCrumbs`: A list of nodes the message has passed through, used to prevent loops and map the network.
+    *   `displayTarget`: An optional field used to send commands to a specific node (or all nodes) to display a web visualization.
+
+*   **`NetworkMessageRegistry.kt`**: A singleton that de-duplicates incoming messages by tracking the IDs of recently seen messages. This is crucial for preventing broadcast storms in the gossip protocol.
+
+*   **UI (`MainActivity.kt`, `WebAppActivity.kt`, `JavaScriptInjectedAndroid.kt`)**: The user interface is a `WebView` running a web application.
+    *   `MainActivity` handles permissions and initializes the `HealingMeshConnection`.
+    *   `JavaScriptInjectedAndroid` provides a bridge for the `WebView`'s JavaScript to call native Kotlin functions, allowing the web UI to get status information and send commands to the mesh.
+
 # Migration Ideas from `localmesh`
 
 This document lists several "good ideas" from the original `localmesh` project that could be
@@ -8,9 +41,9 @@ considered for implementation in `localmesh2`.
 The original project used a Ktor-based HTTP server running on each device. This provided two major
 benefits:
 
-* **Web-based UI:** It allowed for a rich, web-based user interface for the mesh, served directly
+*   **Web-based UI:** It allowed for a rich, web-based user interface for the mesh, served directly
   from the device.
-* **Mesh-wide API:** A `p2pBroadcastInterceptor` would intercept certain local HTTP requests and
+*   **Mesh-wide API:** A `p2pBroadcastInterceptor` would intercept certain local HTTP requests and
   broadcast them to all peers. This created a simple, yet powerful, API for controlling the entire
   mesh (e.g., making all devices display a certain video).
 
@@ -22,9 +55,9 @@ interface in `localmesh2`.
 `localmesh` included a `ServiceHardener` class that acted as a watchdog for the application. It
 would periodically check the health of:
 
-* The local Ktor web server.
-* The P2P network (e.g., checking for connectivity, message flow).
-* The WebView UI.
+*   The local Ktor web server.
+*   The P2P network (e.g., checking for connectivity, message flow).
+*   The WebView UI.
 
 If any of these components were found to be unresponsive, the `ServiceHardener` could automatically
 restart the main service. This is an excellent feature for ensuring the long-term stability of a
@@ -105,13 +138,13 @@ original `localmesh` project.
 This document provided a deep dive into the `P2P_CLUSTER` strategy, and its lessons are critical for
 `localmesh2`:
 
-* **Practical Connection Limit:** The practical limit for stable connections per device is **3 to 4
-  **, not the theoretical maximum of 7. `localmesh2`'s `TopologyOptimizer` should respect this
+*   **Practical Connection Limit:** The practical limit for stable connections per device is **3 to 4
+    **, not the theoretical maximum of 7. `localmesh2`'s `TopologyOptimizer` should respect this
   limit.
-* **Bluetooth Only:** `P2P_CLUSTER` operates exclusively over Bluetooth when there is no external
+*   **Bluetooth Only:** `P2P_CLUSTER` operates exclusively over Bluetooth when there is no external
   Wi-Fi router. It does **not** upgrade to Wi-Fi Direct. This explains the lower bandwidth and makes
   the 3-4 device limit a hard constraint.
-* **Authentication Tokens:** The API provides an authentication token during the connection
+*   **Authentication Tokens:** The API provides an authentication token during the connection
   handshake. The original project did not use this, but `localmesh2` should consider implementing a
   manual, UI-driven verification of this token to prevent man-in-the-middle attacks.
 
@@ -119,17 +152,17 @@ This document provided a deep dive into the `P2P_CLUSTER` strategy, and its less
 
 The following issues from the original project are worth noting to avoid repeating them:
 
-* **WebView Permission Vulnerability:** The old WebView was configured to auto-grant all
+*   **WebView Permission Vulnerability:** The old WebView was configured to auto-grant all
   permissions (camera, mic, etc.). This was marked as "Won't Fix" for the demo, but is a major
   security risk that `localmesh2` must avoid.
-* **Race Conditions:** Several race conditions were identified in the `TopologyOptimizer` and
+*   **Race Conditions:** Several race conditions were identified in the `TopologyOptimizer` and
   `DisplayActivity` of the original project. As `localmesh2` develops similar features, it should be
   mindful of these potential issues:
-    * Multiple connection requests being fired before the connection count is updated.
-    * Network rewiring and island discovery logic running concurrently.
-    * Multiple intents arriving at the `DisplayActivity` in quick succession, causing the wrong URL
+    *   Multiple connection requests being fired before the connection count is updated.
+    *   Network rewiring and island discovery logic running concurrently.
+    *   Multiple intents arriving at the `DisplayActivity` in quick succession, causing the wrong URL
       to be loaded.
-* **WebView Resource Leaks:** The bug report noted a potential for resource leaks if the WebView is
+*   **WebView Resource Leaks:** The bug report noted a potential for resource leaks if the WebView is
   not explicitly destroyed. `localmesh2` should ensure its `WebAppActivity` handles the WebView
   lifecycle correctly.
 
@@ -138,18 +171,18 @@ The following issues from the original project are worth noting to avoid repeati
 The camera-to-slideshow workflow analysis revealed two key problems that `localmesh2` should solve
 if it implements a similar feature:
 
-1. **Race Condition:** The command to open the slideshow on a peer device would often arrive
+1.  **Race Condition:** The command to open the slideshow on a peer device would often arrive
    *before* the image file transfer was complete. This resulted in the slideshow opening without the
    new image, which would only appear after a polling interval.
-2. **Polling Inefficiency:** The slideshow relied on polling to discover new images. A push-based
+2.  **Polling Inefficiency:** The slideshow relied on polling to discover new images. A push-based
    mechanism (e.g., a WebSocket or a dedicated "new image" message) would be far more efficient and
    provide a better user experience.
 
 ### General Notes
 
-* **OS-Level Issues:** As noted in `BAD_NETWORK.md`, be aware of potential OS-level issues, such as
+*   **OS-Level Issues:** As noted in `BAD_NETWORK.md`, be aware of potential OS-level issues, such as
   the system denying necessary permissions, which can be difficult to debug.
-* **Testing Topology Logic:** The `NEW_DEVELOPER_TESTING_GUIDE.md` highlighted that automated
+*   **Testing Topology Logic:** The `NEW_DEVELOPER_TESTING_GUIDE.md` highlighted that automated
   testing of complex, emergent network behavior can be flaky. Manual testing on real devices remains
   the most reliable way to verify topology optimization logic.
 
@@ -166,7 +199,7 @@ if it implements a similar feature:
 
 We will split the existing `NearbyConnectionsManager` into two distinct classes:
 
-1. **`NearbyConnectionsManager` (Refactored):**
+1.  **`NearbyConnectionsManager` (Refactored):**
 
     - This class will be responsible *only* for the direct interactions with the
       `com.google.android.gms.nearby.connection` API.
@@ -175,7 +208,7 @@ We will split the existing `NearbyConnectionsManager` into two distinct classes:
     - It will not contain any logic specific to the "snake" topology (e.g., reshuffling, connection
       count rules).
 
-2. **`TopologyOptimizer` (New Class):**
+2.  **`TopologyOptimizer` (New Class):**
 
     - This class will contain all the high-level logic for maintaining the desired mesh topology.
     - It will be responsible for the "reshuffling" logic.
@@ -240,14 +273,14 @@ receiver would simply check which field is not null to know how to process the p
 The original `localmesh` project used a more complex architecture that could be beneficial to adopt
 in the future.
 
-* **FUTURE: `BridgeService`:** A foreground `Service` that orchestrates all the components. This
+*   **FUTURE: `BridgeService`:** A foreground `Service` that orchestrates all the components. This
   would keep the mesh network alive even when the app is not in the foreground.
-* **FUTURE: `LocalHttpServer`:** A Ktor-based HTTP server that serves the web UI and provides a full
+*   **FUTURE: `LocalHttpServer`:** A Ktor-based HTTP server that serves the web UI and provides a full
   API for the frontend. This is a more powerful and flexible alternative to the current JavaScript
   bridge.
-* **FUTURE: `FileReassemblyManager`:** A manager class to handle incoming file chunks, reassemble
+*   **FUTURE: `FileReassemblyManager`:** A manager class to handle incoming file chunks, reassemble
   them, and save them to disk, enabling file sharing.
-* **FUTURE: `ServiceHardener`:** A watchdog service that monitors the health of the application and
+*   **FUTURE: `ServiceHardener`:** A watchdog service that monitors the health of the application and
   can restart it if it becomes unresponsive.
 
 ## 8. FUTURE: API Reference
@@ -255,12 +288,12 @@ in the future.
 If a Ktor-based `LocalHttpServer` is implemented, the following API endpoints from the original
 project could be a good starting point:
 
-* `GET /list?type=folders`: Lists the available content folders.
-* `GET /status`: Retrieves the current service status, device ID, and peer list.
-* `POST /chat`: Sends a chat message to all peers.
-* `GET /display`: Triggers the `WebAppActivity` on remote peers.
-* `POST /send-file`: Initiates a file transfer.
-* `GET /{path...}`: Serves static files.
+*   `GET /list?type=folders`: Lists the available content folders.
+*   `GET /status`: Retrieves the current service status, device ID, and peer list.
+*   `POST /chat`: Sends a chat message to all peers.
+*   `GET /display`: Triggers the `WebAppActivity` on remote peers.
+*   `POST /send-file`: Initiates a file transfer.
+*   `GET /{path...}`: Serves static files.
 
 # Refactor: Automatic Start on Permission Grant
 
@@ -316,34 +349,34 @@ simplicity, the `TopologyOptimizer` contained several valuable ideas for future 
 
 ## 1. Intelligent Connection Decisions
 
-* **Concept:** The original `shouldConnectTo` function in `TopologyOptimizer` considered the
+*   **Concept:** The original `shouldConnectTo` function in `TopologyOptimizer` considered the
   connection count of the remote endpoint when deciding whether to connect. This information would
   have been encoded in the endpoint name.
-* **Value:** This would allow the node to make more intelligent connection decisions, for example,
+*   **Value:** This would allow the node to make more intelligent connection decisions, for example,
   by prioritizing connections to nodes with fewer peers. This would help to build a more balanced
   and robust network topology.
 
 ## 2. Safe Disconnection Logic (Implemented)
 
-* **Concept:** A peer should only be dropped if it remains reachable through a 2-hop path.
-* **Implementation:** The `findRedundantPeer` function now calculates a "redundancy score" for each
+*   **Concept:** A peer should only be dropped if it remains reachable through a 2-hop path.
+*   **Implementation:** The `findRedundantPeer` function now calculates a "redundancy score" for each
   direct peer. The score is the number of other peers that also provide a path to the candidate
   peer. The peer with the highest score is chosen to be dropped. This ensures network connectivity
   is maintained when making room for new nodes.
 
 ## 3. Proactive Churn for Network Discovery
 
-* **Concept:** The `TopologyOptimizer` contained logic to proactively drop a well-connected peer if
+*   **Concept:** The `TopologyOptimizer` contained logic to proactively drop a well-connected peer if
   all of its current peers were also well-connected.
-* **Value:** This "proactive churn" would help the network to discover new nodes and prevent it from
+*   **Value:** This "proactive churn" would help the network to discover new nodes and prevent it from
   stagnating in a stable but suboptimal topology. This is especially important for discovering new
   islands.
 
 ## 4. Aggressive Reconnection
 
-* **Concept:** The `onDisconnected` function in `TopologyOptimizer` contained logic to "aggressively
+*   **Concept:** The `onDisconnected` function in `TopologyOptimizer` contained logic to "aggressively
   reconnect" to a new peer if the number of connections dropped below a minimum threshold.
-* **Value:** This would ensure that the node always maintains a minimum level of connectivity,
+*   **Value:** This would ensure that the node always maintains a minimum level of connectivity,
   making the network more resilient to node failures.
 
 # Feature: "SlowConnect" Mandate-and-Verify Join Algorithm
