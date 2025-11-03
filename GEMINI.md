@@ -26,7 +26,8 @@ The system is composed of these main components:
   interacts with the backend through a JavaScript interface.
 * **`localmesh2` Android App:** The native Android application that provides the
   Android-specific implementations and UI.
-    * `HealingMeshConnection`: The core of the networking layer. It manages advertising, discovery, connections, and the gossip protocol.
+    * `HealingMeshConnection`: The core of the networking layer. It manages advertising, discovery,
+      connections, and the gossip protocol.
     * `WebAppActivity`: The Android activity for hosting the `WebView`.
     * `JavaScriptInjectedAndroid`: The bridge that allows communication between the WebView frontend
       and the Kotlin backend.
@@ -100,6 +101,7 @@ mandatory for all tasks.
 
 1. **Simplicity:** Strongly prefer simple, straightforward, and concise code.
 2. **Modern Syntax:** Use modern Kotlin features where appropriate, especially for string parsing.
+   Use kotlin.time.Instant over MS whenever possible.
 3. **Fluent Syntax:** Prefer fluent syntax (`apply`, `also`) and early returns over deeply nested
    if-statements.
 4. **No Magic Numbers:** Avoid magic numbers (e.g., `val uid = String(bytes.copyOfRange(0, 36))`).

@@ -1,8 +1,6 @@
 package info.benjaminhill.localmesh2.p2p
 
 import timber.log.Timber
-import kotlin.time.Clock
-import kotlin.time.Duration.Companion.minutes
 import kotlin.time.ExperimentalTime
 
 /**
@@ -32,20 +30,4 @@ object EndpointRegistry {
         Timber.i("EndpointRegistry cleared")
         endpoints.clear()
     }
-
-    fun numConnectedPeers(): Int = endpoints.values.filter { it.isPeer() }.size
-
-    fun getPeerIds(): Set<String> = endpoints.values.filter { it.isPeer() }.map { it.id }.toSet()
-
-    fun prune() {
-        val now = Clock.System.now()
-        endpoints.values.removeIf {
-            it.lastUpdate + 5.minutes < now
-        }
-    }
-
-    fun getPotentialConnections(): Set<Endpoint> = endpoints.values.filter {
-        !it.isPeer() &&
-                it.lastUpdate > Clock.System.now().minus(3.minutes)
-    }.toSet()
 }

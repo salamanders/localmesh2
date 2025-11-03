@@ -52,14 +52,14 @@ fun FullScreenWebView(url: String) {
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
-                        Timber.i( "WebViewClient onPageFinished: $url")
+                        Timber.i("WebViewClient onPageFinished: $url")
                         // Check if the magic function exists, and if so, call it.
                         view?.evaluateJavascript("typeof autoStartInWebView === 'function'") { result ->
                             if ("true" == result) {
                                 Timber.i("Found autoStartInWebView in $url, executing.")
                                 view.evaluateJavascript("autoStartInWebView();", null)
                             } else {
-                                Timber.i( "No autoStartInWebView in $url, skipping.")
+                                Timber.i("No autoStartInWebView in $url, skipping.")
                             }
                         }
                     }
@@ -86,7 +86,7 @@ fun FullScreenWebView(url: String) {
             }
         },
         update = {
-            Timber.i( "Updating URL to: $url")
+            Timber.i("Updating URL to: $url")
             it.loadUrl(url)
         },
         modifier = Modifier.fillMaxSize()
