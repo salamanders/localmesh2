@@ -1,12 +1,15 @@
 package info.benjaminhill.localmesh2.p2p
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.AdvertisingOptions
 import com.google.android.gms.nearby.connection.ConnectionInfo
 import com.google.android.gms.nearby.connection.ConnectionLifecycleCallback
 import com.google.android.gms.nearby.connection.ConnectionResolution
 import com.google.android.gms.nearby.connection.ConnectionsClient
+import com.google.android.gms.nearby.connection.ConnectionsStatusCodes
 import com.google.android.gms.nearby.connection.DiscoveredEndpointInfo
 import com.google.android.gms.nearby.connection.DiscoveryOptions
 import com.google.android.gms.nearby.connection.EndpointDiscoveryCallback
@@ -14,79 +17,113 @@ import com.google.android.gms.nearby.connection.Payload
 import com.google.android.gms.nearby.connection.PayloadCallback
 import com.google.android.gms.nearby.connection.PayloadTransferUpdate
 import com.google.android.gms.nearby.connection.Strategy
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.serialization.ExperimentalSerializationApi
 import timber.log.Timber
-import kotlin.random.Random
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArraySet
 
 /**
- * Manages a self-healing mesh network using the Google Nearby Connections API.
+ * Manages a k-regular graph topology using the Android Nearby Connections API.
  *
- * Core Principles:
- * 1.  **Simplicity:** Logic is kept straightforward. Nodes only care about their direct connections.
- * 2.  **Resilience:** The network automatically heals by forming new connections when existing ones are lost.
- * 3.  **Decentralization:** No central authority. All nodes are equal peers.
+ * This class implements a state-driven architecture to maintain a graph where each node has a
+ * degree of *k*. It uses a proactive "Graph Manager" to seek new connections when the node's
+ * degree is below *k*, and an "accept-and-prune" strategy to maintain the graph's randomness
+ * and handle new inbound connections when the node is at capacity.
  *
- * Connection Logic:
- * - Each node aims to maintain between `MIN_CONNECTIONS` and `MAX_CONNECTIONS`.
- * - It continuously discovers nearby peers.
- * - If below `MIN_CONNECTIONS`, it attempts to connect to a discovered peer it isn't already connected to.
- * - It accepts incoming connections if it's below `MAX_CONNECTIONS`.
+ * State Management:
+ * - `discoveredEndpoints`: All potential neighbors seen by the discovery callback.
+ * - `pendingConnections`: Endpoints for which a connection is currently in progress.
+ * - `establishedConnections`: Active, confirmed connections that form the node's current degree.
  *
- * Communication:
- * - Uses a gossip protocol to share network topology information (`EndpointRegistry`).
- * - Prevents broadcast storms by de-duplicating messages and using breadcrumbs to avoid loops.
+ * The implementation is based on the architectural guide for a state-driven, k-regular graph.
  */
 class HealingMeshConnection(appContext: Context) {
 
     private val connectionsClient: ConnectionsClient = Nearby.getConnectionsClient(appContext)
-    private val scope = CoroutineScope(Job() + Dispatchers.IO)
-    private var maintenanceTicker: Job? = null
-    private var gossipTicker: Job? = null
 
-    /** The set of peers we are currently trying to connect to. */
-    private val pendingConnections = mutableSetOf<String>()
+    // STATE 1: All potential neighbors we can see
+    private val discoveredEndpoints = ConcurrentHashMap<String, DiscoveredEndpointInfo>()
+
+    // STATE 2: Neighbors we are actively trying to connect to (or are connecting to us)
+    private val pendingConnections = CopyOnWriteArraySet<String>()
+
+    // STATE 3: Neighbors we are successfully connected to (endpointId -> connection timestamp)
+    private val establishedConnections = ConcurrentHashMap<String, Long>()
+
+    // Handler for proactive connection management
+    private val graphManagerHandler = Handler(Looper.getMainLooper())
+
+
+    /** Handles populating the `discoveredEndpoints` map. */
+    private val endpointDiscoveryCallback = object : EndpointDiscoveryCallback() {
+        override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
+            if (info.serviceId == MESH_SERVICE_ID) {
+                Timber.i("Discovery: Found endpoint ${'$'}endpointId (${'$'}{info.endpointName})")
+                discoveredEndpoints[endpointId] = info
+            }
+        }
+
+        override fun onEndpointLost(endpointId: String) {
+            Timber.i("Discovery: Lost endpoint ${'$'}endpointId")
+            discoveredEndpoints.remove(endpointId)
+            // Robustness: Clean up any state if a lost endpoint was pending or established.
+            pendingConnections.remove(endpointId)
+            if (establishedConnections.containsKey(endpointId)) {
+                establishedConnections.remove(endpointId)
+                // The Graph Manager loop will handle finding a new connection.
+            }
+        }
+    }
 
     /** Handles all connection lifecycle events, both incoming and outgoing. */
     private val connectionLifecycleCallback = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, connectionInfo: ConnectionInfo) {
-            Timber.i("onConnectionInitiated from ${connectionInfo.endpointName} ($endpointId)")
-            EndpointRegistry[endpointId].apply {
-                refreshLastUpdate()
-                setName(connectionInfo.endpointName)
+            Timber.i("onConnectionInitiated from ${'$'}{connectionInfo.endpointName} (${'$'}endpointId)")
+            if (pendingConnections.contains(endpointId)) {
+                Timber.w("Duplicate onConnectionInitiated for ${'$'}endpointId, ignoring.")
+                return
             }
-            if (EndpointRegistry.numConnectedPeers() < MAX_CONNECTIONS) {
-                Timber.i("Accepting connection from $endpointId")
-                connectionsClient.acceptConnection(endpointId, payloadCallback)
-            } else {
-                Timber.i("Rejecting connection from $endpointId, already have ${EndpointRegistry.numConnectedPeers()} connections.")
-                connectionsClient.rejectConnection(endpointId)
-            }
+            // Always accept the connection. We will prune in onConnectionResult.
+            pendingConnections.add(endpointId)
+            connectionsClient.acceptConnection(endpointId, payloadCallback)
         }
 
         override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
-            pendingConnections.remove(endpointId)
-            if (result.status.isSuccess) {
-                Timber.i("onConnectionResult: SUCCESS for $endpointId")
-                EndpointRegistry[endpointId].apply {
-                    setIsPeer() // Sets distance to 1
-                    refreshLastUpdate()
+            pendingConnections.remove(endpointId) // No longer pending
+
+            when (result.status.statusCode) {
+                ConnectionsStatusCodes.STATUS_OK -> {
+                    Timber.i("onConnectionResult: SUCCESS for ${'$'}endpointId")
+                    establishedConnections[endpointId] = System.currentTimeMillis()
+
+                    // Pruning logic: If we are over-capacity, prune a random, tenured connection.
+                    if (establishedConnections.size > K_DEGREE) {
+                        val nodeToPrune = establishedConnections.entries
+                            .filterNot { it.key == endpointId } // Don't prune the one we just added
+                            .filter { (System.currentTimeMillis() - it.value) > PRUNE_COOLDOWN_MS }
+                            .randomOrNull()
+
+                        if (nodeToPrune != null) {
+                            Timber.i("PRUNE: Over capacity. Pruning ${'$'}{nodeToPrune.key}")
+                            connectionsClient.disconnectFromEndpoint(nodeToPrune.key)
+                            // onDisconnected will handle removal from establishedConnections
+                        }
+                    }
                 }
-            } else {
-                Timber.w("onConnectionResult: FAILURE for $endpointId, status: ${result.status.statusMessage} (${result.status.statusCode})")
-                EndpointRegistry[endpointId].setIsNotPeer()
-                // Don't mark as not-peer, they might still be reachable through gossip
+
+                ConnectionsStatusCodes.STATUS_CONNECTION_REJECTED -> {
+                    Timber.w("onConnectionResult: REJECTED for ${'$'}endpointId")
+                }
+
+                else -> {
+                    Timber.w("onConnectionResult: FAILURE for ${'$'}endpointId, status: ${'$'}{result.status.statusMessage} (${'$'}{result.status.statusCode})")
+                }
             }
         }
 
         override fun onDisconnected(endpointId: String) {
-            Timber.i("onDisconnected from $endpointId")
-            EndpointRegistry[endpointId].setIsNotPeer() // Sets distance to null
+            Timber.i("onDisconnected from ${'$'}endpointId")
+            establishedConnections.remove(endpointId)
         }
     }
 
@@ -94,22 +131,20 @@ class HealingMeshConnection(appContext: Context) {
     @OptIn(ExperimentalSerializationApi::class)
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
-            Timber.d("onPayloadReceived from $endpointId")
+            Timber.d("onPayloadReceived from ${'$'}endpointId")
             if (payload.type != Payload.Type.BYTES) {
-                Timber.w("Received non-bytes payload from $endpointId, ignoring.")
+                Timber.w("Received non-bytes payload from ${'$'}endpointId, ignoring.")
                 return
             }
             val message = NetworkMessage.fromByteArray(payload.asBytes()!!)
 
-            // De-duplication
             if (!NetworkMessageRegistry.isFirstSeen(message)) {
-                Timber.d("Ignoring duplicate message ${message.id} from $endpointId")
+                Timber.d("Ignoring duplicate message ${'$'}{message.id} from ${'$'}endpointId")
                 return
             }
-            processBreadcrumbs(message.breadCrumbs)
 
             if (message.displayTarget == EndpointRegistry.localHumanReadableName) {
-                Timber.i("COMMAND: Received command: $message")
+                Timber.i("COMMAND: Received command: ${'$'}message")
                 // TODO: Actually do something with the command
             }
 
@@ -128,102 +163,21 @@ class HealingMeshConnection(appContext: Context) {
             connectionLifecycleCallback,
             AdvertisingOptions.Builder().setStrategy(STRATEGY).build()
         ).addOnSuccessListener {
-            Timber.i("Advertising started for service $EndpointRegistry.localHumanReadableName.")
+            Timber.i("Advertising started for service ${'$'}{EndpointRegistry.localHumanReadableName}.")
         }.addOnFailureListener { e ->
-            Timber.i(e, "Advertising failed for service $EndpointRegistry.localHumanReadableName.")
+            Timber.i(e, "Advertising failed for service ${'$'}{EndpointRegistry.localHumanReadableName}.")
         }
 
         connectionsClient.startDiscovery(
             MESH_SERVICE_ID,
-            object : EndpointDiscoveryCallback() {
-                override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
-                    if (info.serviceId == MESH_SERVICE_ID) {
-                        Timber.i("Discovery: Found endpoint $endpointId (${info.endpointName})")
-                        EndpointRegistry[endpointId].apply {
-                            setName(info.endpointName)
-                            refreshLastUpdate()
-                        }
-                    }
-                }
-
-                override fun onEndpointLost(endpointId: String) {
-                    Timber.i("Discovery: Lost endpoint $endpointId")
-                    // No action needed, prune takes care of it.
-                }
-            },
+            endpointDiscoveryCallback, // Use the new callback
             DiscoveryOptions.Builder().setStrategy(STRATEGY).build()
         ).addOnSuccessListener {
             Timber.i("Discovery started.")
         }.addOnFailureListener { e ->
             Timber.e(e, "Discovery failed.")
         }
-
-        maintenanceTicker = scope.launch {
-            while (isActive) {
-                runMaintenance()
-                delay(5_000)
-            }
-        }
-
-        gossipTicker = scope.launch {
-            while (isActive) {
-                delay(15_000L + Random.nextLong(10_000L))
-                sendGossip()
-            }
-        }
-    }
-
-    private fun runMaintenance() {
-        pruneEndpointRegistry()
-        healConnections()
-    }
-
-    private fun healConnections() {
-        if (EndpointRegistry.numConnectedPeers() < MIN_CONNECTIONS) {
-            val target = EndpointRegistry.getPotentialConnections()
-                .firstOrNull { it.id !in pendingConnections }
-            if (target != null) {
-                Timber.i("HEAL: Attempting to connect to ${target.id}")
-                pendingConnections.add(target.id)
-                connectionsClient.requestConnection(
-                    EndpointRegistry.localHumanReadableName,
-                    target.id,
-                    connectionLifecycleCallback
-                ).addOnFailureListener { e ->
-                    Timber.w(e, "HEAL: Failed to request connection to ${target.id}")
-                    pendingConnections.remove(target.id)
-                }
-            }
-        }
-    }
-
-
-    private fun sendGossip() {
-        Timber.d("GOSSIP: Sending gossip")
-        val gossip = NetworkMessage(
-            breadCrumbs = listOf(EndpointRegistry.localHumanReadableName to System.currentTimeMillis()),
-            displayTarget = null
-        )
-        NetworkMessageRegistry.isFirstSeen(gossip)
-        forwardMessage(gossip, null)
-    }
-
-    private fun pruneEndpointRegistry() {
-        EndpointRegistry.prune()
-    }
-
-    private fun processBreadcrumbs(crumbs: List<Pair<String, Long>>) {
-        crumbs.forEachIndexed { i, (peerId, timestamp) ->
-            val hopCount = i + 1
-            val existing = EndpointRegistry[peerId]
-            if (hopCount < (existing.distance ?: Int.MAX_VALUE)) {
-                Timber.d("Updating $peerId to distance $hopCount")
-                existing.apply {
-                    setDistance(hopCount)
-                    setLastSeen(timestamp)
-                }
-            }
-        }
+        startGraphManagerLoop()
     }
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -233,38 +187,76 @@ class HealingMeshConnection(appContext: Context) {
         val payload = Payload.fromBytes(msgToForward.toByteArray())
 
         val pathIds = newCrumbs.map { it.first }
-        val targets = EndpointRegistry.getPeerIds().filter { it != fromEndpointId && it !in pathIds }
+        val targets = establishedConnections.keys.toList().filter { it != fromEndpointId && it !in pathIds }
 
         if (targets.isNotEmpty()) {
-            Timber.d("Forwarding message ${message.id} from $fromEndpointId to $targets")
+            Timber.d("Forwarding message ${'$'}{message.id} from ${'$'}fromEndpointId to ${'$'}targets")
             connectionsClient.sendPayload(targets, payload)
         }
     }
 
-    fun getDirectConnectionCount(): Int = EndpointRegistry.numConnectedPeers()
+    fun getEstablishedConnectionsCount(): Int = establishedConnections.size
 
     fun broadcast(message: NetworkMessage) {
-        Timber.d("BROADCAST: $message")
+        Timber.d("BROADCAST: ${'$'}message")
         NetworkMessageRegistry.isFirstSeen(message)
         forwardMessage(message, null)
     }
 
     fun stopNetworking() {
-        maintenanceTicker?.cancel()
-        gossipTicker?.cancel()
+        stopGraphManagerLoop()
         Timber.i("Manually stopped")
         connectionsClient.stopAllEndpoints()
-        EndpointRegistry.clear()
         NetworkMessageRegistry.clear()
+        discoveredEndpoints.clear()
         pendingConnections.clear()
+        establishedConnections.clear()
     }
+
+    private val graphManagerRunnable = Runnable {
+        proactivelyMaintainGraph()
+        startGraphManagerLoop() // Re-schedule itself
+    }
+
+    private fun startGraphManagerLoop() {
+        graphManagerHandler.postDelayed(graphManagerRunnable, MANAGER_LOOP_DELAY_MS)
+    }
+
+    private fun stopGraphManagerLoop() {
+        graphManagerHandler.removeCallbacks(graphManagerRunnable)
+    }
+
+    private fun proactivelyMaintainGraph() {
+        if (establishedConnections.size < K_DEGREE) {
+            val candidates = discoveredEndpoints.keys
+                .filterNot { establishedConnections.containsKey(it) }
+                .filterNot { pendingConnections.contains(it) }
+
+            if (candidates.isNotEmpty()) {
+                val candidateId = candidates.random()
+                Timber.i("GRAPH_MANAGER: Attempting to connect to ${'$'}candidateId")
+                pendingConnections.add(candidateId)
+                connectionsClient.requestConnection(
+                    EndpointRegistry.localHumanReadableName,
+                    candidateId,
+                    connectionLifecycleCallback
+                ).addOnFailureListener {
+                    Timber.w("GRAPH_MANAGER: Failed to request connection to ${'$'}candidateId")
+                    pendingConnections.remove(candidateId)
+                }
+            }
+        }
+    }
+
 
     companion object {
         private const val MESH_SERVICE_ID = "info.benjaminhill.localmesh2.MESH"
         private val STRATEGY = Strategy.P2P_CLUSTER
-        private const val MIN_CONNECTIONS = 2
-        private const val MAX_CONNECTIONS = 4
-
-
+        // The degree of the regular graph. 3 is recommended for stability.
+        private const val K_DEGREE = 3
+        // Cooldown before a connection is eligible for pruning.
+        private const val PRUNE_COOLDOWN_MS = 30_000L
+        // Proactive connection management loop delay.
+        private const val MANAGER_LOOP_DELAY_MS: Long = 5000 // Check every 5 seconds
     }
 }

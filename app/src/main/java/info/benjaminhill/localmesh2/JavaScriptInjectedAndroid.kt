@@ -44,14 +44,14 @@ class JavaScriptInjectedAndroid(private val context: Context) {
                 visualizations = visualizations,
                 id = EndpointRegistry.localHumanReadableName,
                 timestamp = System.currentTimeMillis(),
-                connectedPeerCount = NetworkHolder.connection?.getDirectConnectionCount() ?: 0,
+                connectedPeerCount = NetworkHolder.connection?.getEstablishedConnectionsCount() ?: 0,
             )
         )
     }
 
     @JavascriptInterface
     fun sendPeerDisplayCommand(folder: String) {
-        Timber.d("sendPeerDisplayCommand: $folder")
+        Timber.d("sendPeerDisplayCommand: ${'$'}folder")
         val message = NetworkMessage(
             breadCrumbs = emptyList(),
             displayTarget = folder
