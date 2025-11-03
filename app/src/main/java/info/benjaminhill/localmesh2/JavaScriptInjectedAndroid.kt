@@ -4,7 +4,6 @@ package info.benjaminhill.localmesh2
 
 import android.content.Context
 import android.webkit.JavascriptInterface
-import info.benjaminhill.localmesh2.p2p.EndpointRegistry
 import info.benjaminhill.localmesh2.p2p.NetworkHolder
 import info.benjaminhill.localmesh2.p2p.NetworkMessage
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -45,7 +44,7 @@ class JavaScriptInjectedAndroid(private val context: Context) {
         return Json.encodeToString(
             Status(
                 visualizations = visualizations,
-                id = EndpointRegistry.localHumanReadableName,
+                id = NetworkHolder.localHumanReadableName,
                 timestamp = System.currentTimeMillis(),
                 connectedPeerCount = NetworkHolder.connection?.getEstablishedConnectionsCount()
                     ?: 0,
@@ -58,7 +57,7 @@ class JavaScriptInjectedAndroid(private val context: Context) {
         Timber.d("sendPeerDisplayCommand: $folder")
         val message = NetworkMessage(
             breadCrumbs = emptyList(),
-            displayTarget = folder
+            displayScreen = folder
         )
         NetworkHolder.connection?.broadcast(message)
     }

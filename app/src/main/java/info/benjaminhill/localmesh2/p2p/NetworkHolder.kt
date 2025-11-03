@@ -9,4 +9,6 @@ package info.benjaminhill.localmesh2.p2p
  */
 object NetworkHolder {
     var connection: HealingMeshConnection? = null
+
+    val localHumanReadableName: String = randomString(5)
 }

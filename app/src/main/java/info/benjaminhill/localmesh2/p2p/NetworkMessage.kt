@@ -13,21 +13,9 @@ import java.util.UUID
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
-// Custom serializer for Instant
-@OptIn(ExperimentalTime::class)
-object InstantSerializer : KSerializer<Instant> {
-    override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("Instant", PrimitiveKind.LONG)
-
-    override fun serialize(encoder: Encoder, value: Instant) {
-        encoder.encodeLong(value.toEpochMilliseconds())
-    }
-
-    override fun deserialize(decoder: Decoder): Instant {
-        return Instant.fromEpochMilliseconds(decoder.decodeLong())
-    }
-}
-
+/**
+ * Easily serialized message that is broadcast and re-broadcast over the network
+ */
 @OptIn(ExperimentalSerializationApi::class, ExperimentalTime::class)
 @Serializable
 data class NetworkMessage(
@@ -36,12 +24,27 @@ data class NetworkMessage(
     // Id to Instant
     val breadCrumbs: List<Pair<String, @Serializable(with = InstantSerializer::class) Instant>>,
     // Optional command to change the display target.
-    val displayTarget: String?,
+    val displayScreen: String?,
 ) {
     fun toByteArray(): ByteArray = Cbor.Default.encodeToByteArray(serializer(), this)
 
     companion object {
         fun fromByteArray(byteArray: ByteArray): NetworkMessage =
             Cbor.Default.decodeFromByteArray(serializer(), byteArray)
+
+        // Custom serializer for Instant
+        @OptIn(ExperimentalTime::class)
+        object InstantSerializer : KSerializer<Instant> {
+            override val descriptor: SerialDescriptor =
+                PrimitiveSerialDescriptor("Instant", PrimitiveKind.LONG)
+
+            override fun serialize(encoder: Encoder, value: Instant) {
+                encoder.encodeLong(value.toEpochMilliseconds())
+            }
+
+            override fun deserialize(decoder: Decoder): Instant {
+                return Instant.fromEpochMilliseconds(decoder.decodeLong())
+            }
+        }
     }
 }

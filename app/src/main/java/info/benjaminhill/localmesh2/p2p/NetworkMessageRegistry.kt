@@ -34,7 +34,7 @@ object NetworkMessageRegistry {
                 } else {
                     Timber.v("No old messages to prune from NetworkMessageRegistry.")
                 }
-                delay(10.seconds)
+                delay(30.seconds)
             }
         }
     }

@@ -163,15 +163,12 @@ class HealingMeshConnection(appContext: Context) {
                 Timber.d("Ignoring duplicate message ${message.id} from $endpointId")
                 return
             }
+            forwardMessage(message, fromEndpointId = endpointId)
 
-            if (message.displayTarget == EndpointRegistry.localHumanReadableName) {
+            message.displayScreen?.let { newDisplayScreen ->
                 Timber.i("COMMAND: Received command: $message")
                 // TODO: Actually do something with the command
-            } else {
-                Timber.d("Message not for me, just forwarding.")
             }
-
-            forwardMessage(message, fromEndpointId = endpointId)
         }
 
         override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {
@@ -181,16 +178,16 @@ class HealingMeshConnection(appContext: Context) {
 
     fun startNetworking() {
         connectionsClient.startAdvertising(
-            EndpointRegistry.localHumanReadableName,
+            NetworkHolder.localHumanReadableName,
             MESH_SERVICE_ID,
             connectionLifecycleCallback,
             AdvertisingOptions.Builder().setStrategy(STRATEGY).build()
         ).addOnSuccessListener {
-            Timber.i("Advertising started for service ${EndpointRegistry.localHumanReadableName}.")
+            Timber.i("Advertising started for service ${NetworkHolder.localHumanReadableName}.")
         }.addOnFailureListener { e ->
             Timber.i(
                 e,
-                "Advertising failed for service ${EndpointRegistry.localHumanReadableName}."
+                "Advertising failed for service ${NetworkHolder.localHumanReadableName}."
             )
         }
 
@@ -208,7 +205,7 @@ class HealingMeshConnection(appContext: Context) {
 
     private fun forwardMessage(message: NetworkMessage, fromEndpointId: String?) {
         val msgToForward =
-            message.copy(breadCrumbs = message.breadCrumbs + (EndpointRegistry.localHumanReadableName to Clock.System.now()))
+            message.copy(breadCrumbs = message.breadCrumbs + (NetworkHolder.localHumanReadableName to Clock.System.now()))
         val payload = Payload.fromBytes(msgToForward.toByteArray())
 
         val pathIds = msgToForward.breadCrumbs.map { it.first }
@@ -266,26 +263,26 @@ class HealingMeshConnection(appContext: Context) {
 
             if (candidates.isNotEmpty()) {
                 val candidateId = candidates.random()
-                Timber.i("GRAPH_MANAGER: Current size is ${establishedConnections.size} so attempting to connect to random $candidateId")
+                Timber.i("proactivelyMaintainGraph: Current size is ${establishedConnections.size} so attempting to connect to random $candidateId")
                 if (pendingConnections.add(candidateId)) {
                     connectionsClient.requestConnection(
-                        EndpointRegistry.localHumanReadableName,
+                        NetworkHolder.localHumanReadableName,
                         candidateId,
                         connectionLifecycleCallback
                     ).addOnFailureListener {
-                        Timber.w("GRAPH_MANAGER: Failed to request connection to $candidateId")
+                        Timber.w("proactivelyMaintainGraph: Failed to request connection to $candidateId")
                         if (!pendingConnections.remove(candidateId)) {
                             Timber.e("Failed to remove $candidateId from pendingConnections after a failed connection request.")
                         }
                     }
                 } else {
-                    Timber.w("GRAPH_MANAGER: Tried to connect to $candidateId, but it was already in pendingConnections.")
+                    Timber.w("proactivelyMaintainGraph: Tried to connect to $candidateId, but it was already in pendingConnections.")
                 }
             } else {
-                Timber.w("GRAPH_MANAGER: Current size is ${establishedConnections.size} but no candidates to connect to.")
+                Timber.w("proactivelyMaintainGraph: Current size is ${establishedConnections.size} but no candidates to connect to.")
             }
         } else {
-            Timber.d("GRAPH_MANAGER: At capacity (${establishedConnections.size}/$K_DEGREE), not seeking new connections.")
+            Timber.d("proactivelyMaintainGraph: At capacity (${establishedConnections.size}/$K_DEGREE), not seeking new connections.")
         }
     }
 
