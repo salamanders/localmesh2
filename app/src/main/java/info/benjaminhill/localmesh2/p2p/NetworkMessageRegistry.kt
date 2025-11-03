@@ -6,6 +6,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -28,7 +29,11 @@ object NetworkMessageRegistry {
         CoroutineScope(Job() + Dispatchers.IO).launch {
             while (isActive) {
                 val ago = Clock.System.now().minus(MESSAGE_CACHE_EXPIRY)
-                seenMessageIds.entries.removeIf { it.value.second < ago }
+                if (seenMessageIds.entries.removeIf { it.value.second < ago }) {
+                    Timber.d("Pruned old messages from NetworkMessageRegistry.")
+                } else {
+                    Timber.v("No old messages to prune from NetworkMessageRegistry.")
+                }
                 delay(10.seconds)
             }
         }
