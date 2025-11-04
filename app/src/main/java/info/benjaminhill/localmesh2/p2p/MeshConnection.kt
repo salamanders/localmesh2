@@ -15,6 +15,7 @@ import com.google.android.gms.nearby.connection.Payload
 import com.google.android.gms.nearby.connection.PayloadCallback
 import com.google.android.gms.nearby.connection.PayloadTransferUpdate
 import com.google.android.gms.nearby.connection.Strategy
+import info.benjaminhill.localmesh2.p2p.NetworkHolder.localHumanReadableName
 import kotlinx.serialization.ExperimentalSerializationApi
 import timber.log.Timber
 import java.util.concurrent.ConcurrentHashMap
@@ -24,27 +25,45 @@ import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
 
+/**
+ * A low-level wrapper for the Google Nearby Connections API.
+ * This class is responsible for the direct mechanics of the peer-to-peer network, including:
+ * - Advertising the local device.
+ * - Discovering remote devices.
+ * - Managing the lifecycle of connections (requesting, accepting, disconnecting).
+ * - Tracking the state of endpoints (discovered, pending, established).
+ * - Sending and receiving raw `Payload` objects.
+ * It abstracts the direct API calls and provides a cleaner interface for higher-level logic,
+ * which is handled by `HealingMesh`.
+ */
 @OptIn(ExperimentalSerializationApi::class, ExperimentalTime::class)
 class MeshConnection(
     appContext: Context,
-    private val localHumanReadableName: String,
     private val listener: MeshConnectionListener
 ) {
 
+    /**
+     * Callback interface for `MeshConnection` events.
+     * Implemented by `HealingMesh` to receive notifications about connection results and incoming data.
+     */
     interface MeshConnectionListener {
+        /** Called when a connection attempt is resolved (succeeded or failed). */
         fun onConnectionResult(endpointId: String, result: ConnectionResolution)
+
+        /** Called when a data `Payload` is received from a connected endpoint. */
         fun onPayloadReceived(endpointId: String, payload: Payload)
     }
 
+    /** The main entry point for interacting with the Nearby Connections API. */
     private val connectionsClient: ConnectionsClient = Nearby.getConnectionsClient(appContext)
 
-    // STATE 1: All potential neighbors we can see
+    /** STATE 1: Endpoints that have been found through discovery but are not yet connected. */
     private val discoveredEndpoints = ConcurrentHashMap<String, DiscoveredEndpointInfo>()
 
-    // STATE 2: Neighbors we are actively trying to connect to (or are connecting to us)
+    /** STATE 2: Endpoints for which a connection has been initiated but not yet resolved. */
     private val pendingConnections = CopyOnWriteArraySet<String>()
 
-    // STATE 3: Neighbors we are successfully connected to (endpointId -> connection timestamp)
+    /** STATE 3: Endpoints that are fully connected and can exchange data. */
     private val establishedConnections = ConcurrentHashMap<String, Instant>()
 
     fun getDiscoveredEndpoints(): Map<String, DiscoveredEndpointInfo> = discoveredEndpoints
@@ -105,7 +124,7 @@ class MeshConnection(
         }
     }
 
-    /** Handles incoming data from connected peers. */
+    /** Handles incoming data from connected peers and forwards it to the listener. */
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
             listener.onPayloadReceived(endpointId, payload)
@@ -116,6 +135,7 @@ class MeshConnection(
         }
     }
 
+    /** Starts the mesh connection, beginning both advertising and discovery. */
     fun start() {
         connectionsClient.startAdvertising(
             localHumanReadableName,
@@ -123,7 +143,7 @@ class MeshConnection(
             connectionLifecycleCallback,
             AdvertisingOptions.Builder().setStrategy(STRATEGY).build()
         ).addOnSuccessListener {
-            Timber.i("Advertising started for service $localHumanReadableName.")
+            Timber.i("Advertising started for service ${localHumanReadableName}.")
         }.addOnFailureListener { e ->
             Timber.i(e, "Advertising failed for service $localHumanReadableName.")
         }
@@ -139,6 +159,7 @@ class MeshConnection(
         }
     }
 
+    /** Stops all Nearby Connections activity, disconnects from all endpoints, and clears state. */
     fun stop() {
         Timber.i("Manually stopped")
         connectionsClient.stopAllEndpoints()
@@ -147,10 +168,12 @@ class MeshConnection(
         establishedConnections.clear()
     }
 
+    /** Internal method to accept an incoming connection request. */
     private fun acceptConnection(endpointId: String) {
         connectionsClient.acceptConnection(endpointId, payloadCallback)
     }
 
+    /** Initiates a connection to a discovered endpoint. */
     fun requestConnection(endpointId: String) {
         if (pendingConnections.add(endpointId)) {
             connectionsClient.requestConnection(
@@ -168,36 +191,41 @@ class MeshConnection(
         }
     }
 
+    /** Disconnects from a connected endpoint. */
     fun disconnectFromEndpoint(endpointId: String) {
         connectionsClient.disconnectFromEndpoint(endpointId)
     }
 
-    fun sendPayload(endpointIds: List<String>, payload: Payload) {
-        connectionsClient.sendPayload(endpointIds, payload)
+    /** Sends a raw payload to a list of specific endpoint IDs. */
+    fun sendPayload(endpointIds: Collection<String>, payload: Payload) {
+        connectionsClient.sendPayload(endpointIds.toList(), payload)
     }
 
-    private fun forwardMessage(message: NetworkMessage, fromEndpointId: String?) {
+    /**
+     * Forwards a message to all connected peers except the original sender.
+     * Adds the current device to the message's breadcrumbs to prevent loops.
+     */
+    private fun forwardMessage(message: NetworkMessage) {
         val msgToForward =
-            message.copy(breadCrumbs = message.breadCrumbs + (NetworkHolder.localHumanReadableName to Clock.System.now()))
+            message.copy(breadCrumbs = message.breadCrumbs + (localHumanReadableName to Clock.System.now()))
         val payload = Payload.fromBytes(msgToForward.toByteArray())
 
-        val pathIds = msgToForward.breadCrumbs.map { it.first }
-        // Forwarding the message has some benefit (reaches targets beyond the ones it already encountered)?
-        val targets =
-            establishedConnections.keys.toList().filter { it != fromEndpointId && it !in pathIds }
+        // Rely on the "no duplicate messages" checking to avoid infinite loops.
+        val targets = establishedConnections.keys
 
         if (targets.isNotEmpty()) {
-            Timber.d("Forwarding message ${message.id} from $fromEndpointId to $targets")
+            Timber.d("Forwarding message ${message.id} to $targets")
             sendPayload(targets, payload)
         } else {
             Timber.d("No targets for message ${message.id}, dropping.")
         }
     }
 
+    /** Initiates a broadcast of a message to all connected peers. */
     fun broadcast(message: NetworkMessage) {
         Timber.d("BROADCAST: $message")
         NetworkMessageRegistry.isFirstSeen(message)
-        forwardMessage(message, null)
+        forwardMessage(message)
     }
 
 

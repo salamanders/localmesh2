@@ -31,11 +31,13 @@ class JavaScriptInjectedAndroid(private val context: Context) {
         }?.toSortedSet() ?: emptySet()
     }
 
+    @OptIn(ExperimentalSerializationApi::class, ExperimentalTime::class)
     @Serializable
     data class Status(
         val visualizations: Set<String>,
         val id: String,
-        val timestamp: Long,
+        val discoveredPeerCount: Int,
+        val pendingPeerCount: Int,
         val connectedPeerCount: Int,
     )
 
@@ -45,7 +47,8 @@ class JavaScriptInjectedAndroid(private val context: Context) {
             Status(
                 visualizations = visualizations,
                 id = NetworkHolder.localHumanReadableName,
-                timestamp = System.currentTimeMillis(),
+                discoveredPeerCount = NetworkHolder.connection?.getDiscoveredEndpointsCount() ?: 0,
+                pendingPeerCount = NetworkHolder.connection?.getPendingConnectionsCount() ?: 0,
                 connectedPeerCount = NetworkHolder.connection?.getEstablishedConnectionsCount()
                     ?: 0,
             )
