@@ -18,7 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
-import info.benjaminhill.localmesh2.p2p.HealingMeshConnection
+import info.benjaminhill.localmesh2.p2p.HealingMesh
 import info.benjaminhill.localmesh2.p2p.NetworkHolder
 import timber.log.Timber
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -28,7 +28,7 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  *
  * This activity is responsible for:
  * - Requesting necessary permissions from the user.
- * - Initializing and starting the `HealingMeshConnection`.
+ * - Initializing and starting the `HealingMesh`.
  * - Launching the `WebAppActivity` to display the web-based UI.
  */
 class MainActivity : ComponentActivity() {
@@ -88,9 +88,9 @@ class MainActivity : ComponentActivity() {
     private fun selectRole() {
         logPermissions()
         Timber.i("Starting Healing Mesh")
-        val hmc = HealingMeshConnection(applicationContext)
-        NetworkHolder.connection = hmc
-        hmc.startNetworking()
+        val hm = HealingMesh(applicationContext)
+        NetworkHolder.connection = hm
+        hm.start()
         display("display.html")
     }
 
@@ -105,6 +105,6 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         Timber.w("MainActivity.onDestroy() called.")
-        NetworkHolder.connection?.stopNetworking()
+        NetworkHolder.connection?.stop()
     }
 }
