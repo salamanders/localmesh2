@@ -48,11 +48,17 @@ object MeshConnection {
      * Implemented by `HealingMesh` to receive notifications about connection results and incoming data.
      */
     interface MeshConnectionListener {
-        /** Called when a connection attempt is resolved (succeeded or failed). */
-        fun onConnectionResult(endpointId: String, result: ConnectionResolution)
+        /** Called when a connection attempt succeeds. */
+        fun onSuccessfulConnection(endpointId: String)
+
+        /** Called when a connection attempt fails. */
+        fun onFailedConnection(endpointId: String)
+
+        /** Called when a connection is disconnected. */
+        fun onDisconnected(endpointId: String)
 
         /** Called when a data `Payload` is received from a connected endpoint. */
-        fun onPayloadReceived(endpointId: String, payload: Payload)
+        fun onPayloadReceived(endpointId: String, message: NetworkMessage)
     }
 
     /** The main entry point for interacting with the Nearby Connections API. */
@@ -121,10 +127,11 @@ object MeshConnection {
             if (result.status.statusCode == ConnectionsStatusCodes.STATUS_OK) {
                 establishedConnections[endpointId] = Clock.System.now()
                 Timber.i("CONNECTION $endpointId 3: Connection established.")
+                HealingMesh.onSuccessfulConnection(endpointId)
             } else {
                 Timber.w("CONNECTION $endpointId 3: Connection failed with status code ${result.status.statusCode}")
+                HealingMesh.onFailedConnection(endpointId)
             }
-            HealingMesh.onConnectionResult(endpointId, result)
         }
 
         override fun onDisconnected(endpointId: String) {
@@ -132,13 +139,19 @@ object MeshConnection {
             if (establishedConnections.remove(endpointId) == null) {
                 Timber.w("CONNECTION $endpointId 4: onDisconnected but it was not in establishedConnections, maybe someone else removed it?")
             }
+            HealingMesh.onDisconnected(endpointId)
         }
     }
 
     /** Handles incoming data from connected peers and forwards it to the listener. */
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
-            HealingMesh.onPayloadReceived(endpointId, payload)
+            if (payload.type != Payload.Type.BYTES) {
+                Timber.w("Received non-bytes payload from $endpointId, ignoring.")
+                return
+            }
+            val message = NetworkMessage.fromByteArray(payload.asBytes()!!)
+            HealingMesh.onPayloadReceived(endpointId, message)
         }
 
         override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {
