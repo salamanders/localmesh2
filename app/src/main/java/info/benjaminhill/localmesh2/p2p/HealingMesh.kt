@@ -1,6 +1,5 @@
 package info.benjaminhill.localmesh2.p2p
 
-import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import com.google.android.gms.nearby.connection.ConnectionResolution
@@ -21,15 +20,13 @@ import kotlin.time.ExperimentalTime
  * - Forwarding messages to the rest of the mesh.
  */
 @OptIn(ExperimentalTime::class, ExperimentalSerializationApi::class)
-class HealingMesh(
-    appContext: Context,
-) : MeshConnection.MeshConnectionListener {
+object HealingMesh : MeshConnection.MeshConnectionListener {
 
-    /** Handles the low-level connection mechanics (discovery, connection, payload transfer). */
-    private val meshConnection = MeshConnection(
-        appContext = appContext,
-        listener = this
-    )
+    // The degree of the regular graph. 3 is recommended for stability.
+    private const val K_DEGREE = 3
+
+    // Proactive connection management loop delay.
+    private val MANAGER_LOOP_DELAY = 5.seconds // Check every 5 seconds
 
     /** Handler to run the periodic graph maintenance task. */
     private val graphManagerHandler = Handler(Looper.getMainLooper())
@@ -41,24 +38,24 @@ class HealingMesh(
     override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
         when (result.status.statusCode) {
             ConnectionsStatusCodes.STATUS_OK -> {
-                Timber.i("SUCCESS for $endpointId")
+                Timber.i("SUCCESS for $endpointId, deciding if anone needs pruning.")
 
                 // Pruning logic: If we are over-capacity, prune a random connection.
-                if (meshConnection.getEstablishedConnections().size > K_DEGREE) {
-                    val nodeToPrune = meshConnection.getEstablishedConnections().keys
+                if (MeshConnection.getEstablishedConnections().size > K_DEGREE) {
+                    val nodeToPrune = MeshConnection.getEstablishedConnections().keys
                         .filterNot { it == endpointId } // Don't prune the one we just added
                         .randomOrNull()
 
                     if (nodeToPrune != null) {
-                        Timber.i("PRUNE: Over capacity (${meshConnection.getEstablishedConnections().size}/$K_DEGREE). Pruning a random endpoint $nodeToPrune")
-                        meshConnection.disconnectFromEndpoint(nodeToPrune)
+                        Timber.i("PRUNE: Over capacity (${MeshConnection.getEstablishedConnections().size}/$K_DEGREE). Pruning a random endpoint $nodeToPrune")
+                        MeshConnection.disconnectFromEndpoint(nodeToPrune)
                     } else {
                         // This can happen in a race condition where another connection is dropped
                         // between the size check and now, or if we only have 1 connection (the new one).
-                        Timber.w("PRUNE: Over capacity (${meshConnection.getEstablishedConnections().size}/$K_DEGREE), but no viable connection to prune.")
+                        Timber.w("PRUNE: Over capacity (${MeshConnection.getEstablishedConnections().size}/$K_DEGREE), but no viable connection to prune.")
                     }
                 } else {
-                    Timber.d("Not over capacity (${meshConnection.getEstablishedConnections().size}/$K_DEGREE).")
+                    Timber.d("Not over capacity (${MeshConnection.getEstablishedConnections().size}/$K_DEGREE).")
                 }
             }
 
@@ -89,35 +86,26 @@ class HealingMesh(
             Timber.d("Ignoring duplicate message ${message.id} from $endpointId")
             return
         }
-        meshConnection.broadcast(message)
+        MeshConnection.broadcast(message)
 
-        message.displayScreen?.let {
-            Timber.i("COMMAND: Received command: $message")
-            // TODO: Actually do something with the command
+        message.displayScreen?.let { path ->
+            Timber.i("COMMAND: Received command to display: $path")
+            info.benjaminhill.localmesh2.WebAppActivity.navigateTo(path)
         }
     }
 
     /** Starts the `HealingMesh` service, which starts the underlying `MeshConnection` and the graph maintenance loop. */
     fun start() {
-        meshConnection.start()
+        MeshConnection.start()
         startGraphManagerLoop()
     }
 
     /** Stops the `HealingMesh` service, including the maintenance loop and the underlying `MeshConnection`. */
     fun stop() {
         stopGraphManagerLoop()
-        meshConnection.stop()
+        MeshConnection.stop()
         NetworkMessageRegistry.clear()
     }
-
-    /** Initiates a broadcast of a new message to the entire mesh. */
-    fun broadcast(message: NetworkMessage) {
-        meshConnection.broadcast(message)
-    }
-
-    fun getEstablishedConnectionsCount(): Int = meshConnection.getEstablishedConnections().size
-    fun getDiscoveredEndpointsCount(): Int = meshConnection.getDiscoveredEndpoints().size
-    fun getPendingConnectionsCount(): Int = meshConnection.getPendingConnections().size
 
     /** The `Runnable` task that executes the periodic graph maintenance logic. */
     private val graphManagerRunnable = Runnable {
@@ -143,28 +131,20 @@ class HealingMesh(
      * candidate from the list of discovered endpoints and attempts to establish a new connection.
      */
     private fun proactivelyMaintainGraph() {
-        if (meshConnection.getEstablishedConnections().size < K_DEGREE) {
-            val candidates = meshConnection.getDiscoveredEndpoints().keys
-                .filterNot { meshConnection.getEstablishedConnections().containsKey(it) }
-                .filterNot { meshConnection.getPendingConnections().contains(it) }
+        if (MeshConnection.getEstablishedConnections().size < K_DEGREE) {
+            val candidates = MeshConnection.getDiscoveredEndpoints().keys
+                .filterNot { MeshConnection.getEstablishedConnections().containsKey(it) }
+                .filterNot { MeshConnection.getPendingConnections().contains(it) }
 
             if (candidates.isNotEmpty()) {
                 val candidateId = candidates.random()
-                Timber.i("Current size is ${meshConnection.getEstablishedConnections().size} so attempting to connect to random $candidateId")
-                meshConnection.requestConnection(candidateId)
+                Timber.i("Current size is ${MeshConnection.getEstablishedConnections().size} so attempting to connect to random $candidateId")
+                MeshConnection.requestConnection(candidateId)
             } else {
-                Timber.w("Current size is ${meshConnection.getEstablishedConnections().size} but no candidates to connect to.")
+                Timber.w("Current size is ${MeshConnection.getEstablishedConnections().size} but no candidates to connect to.")
             }
         } else {
-            Timber.d("At capacity (${meshConnection.getEstablishedConnections().size}/$K_DEGREE), not seeking new connections.")
+            Timber.d("At capacity (${MeshConnection.getEstablishedConnections().size}/$K_DEGREE), not seeking new connections.")
         }
-    }
-
-    companion object {
-        // The degree of the regular graph. 3 is recommended for stability.
-        private const val K_DEGREE = 3
-
-        // Proactive connection management loop delay.
-        private val MANAGER_LOOP_DELAY = 5.seconds // Check every 5 seconds
     }
 }

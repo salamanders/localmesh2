@@ -74,9 +74,9 @@
 
 <div class="status-bar">
     <div>ID: <span id="device-id">...</span></div>
-    <div>D: <span id="discovered-peers">0</span></div>
-    <div>P: <span id="pending-peers">0</span></div>
-    <div>C: <span id="connected-peers">0</span></div>
+    <div>Disc: <span id="discovered-peers">0</span></div>
+    <div>Pend: <span id="pending-peers">0</span></div>
+    <div>Ccnn: <span id="connected-peers">0</span></div>
 </div>
 
 <script type="text/javascript">
@@ -113,6 +113,7 @@
                     const li = document.createElement('li');
                     li.textContent = folder;
                     li.addEventListener('click', () => {
+                        Android.sendPeerDisplayCommand(folder);
                         window.location.href = folder + '/index.html';
                     });
                     visualizationsList.appendChild(li);
@@ -126,7 +127,7 @@
 
     // Initial fetch and then poll every 5 seconds
     updateStatus();
-    setInterval(updateStatus, 5000);
+    setInterval(updateStatus, 30000);
     console.log('LOCALMESH_SCRIPT_SUCCESS:index');
 </script>
 </body>

@@ -15,11 +15,10 @@ import com.google.android.gms.nearby.connection.Payload
 import com.google.android.gms.nearby.connection.PayloadCallback
 import com.google.android.gms.nearby.connection.PayloadTransferUpdate
 import com.google.android.gms.nearby.connection.Strategy
-import info.benjaminhill.localmesh2.p2p.NetworkHolder.localHumanReadableName
+import info.benjaminhill.localmesh2.randomString
 import kotlinx.serialization.ExperimentalSerializationApi
 import timber.log.Timber
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CopyOnWriteArraySet
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
@@ -37,10 +36,12 @@ import kotlin.time.Instant
  * which is handled by `HealingMesh`.
  */
 @OptIn(ExperimentalSerializationApi::class, ExperimentalTime::class)
-class MeshConnection(
-    appContext: Context,
-    private val listener: MeshConnectionListener
-) {
+object MeshConnection {
+    private const val MESH_SERVICE_ID = "info.benjaminhill.localmesh2.MESH"
+    val STRATEGY: Strategy = Strategy.P2P_CLUSTER
+
+    // Self identification, lasts the duration of the app
+    val localHumanReadableName: String = randomString(5)
 
     /**
      * Callback interface for `MeshConnection` events.
@@ -55,19 +56,24 @@ class MeshConnection(
     }
 
     /** The main entry point for interacting with the Nearby Connections API. */
-    private val connectionsClient: ConnectionsClient = Nearby.getConnectionsClient(appContext)
+    private lateinit var connectionsClient: ConnectionsClient
+
+    fun init(appContext: Context) {
+        connectionsClient = Nearby.getConnectionsClient(appContext)
+    }
+
 
     /** STATE 1: Endpoints that have been found through discovery but are not yet connected. */
     private val discoveredEndpoints = ConcurrentHashMap<String, DiscoveredEndpointInfo>()
 
     /** STATE 2: Endpoints for which a connection has been initiated but not yet resolved. */
-    private val pendingConnections = CopyOnWriteArraySet<String>()
+    private val pendingConnections = ConcurrentHashMap<String, Instant>()
 
     /** STATE 3: Endpoints that are fully connected and can exchange data. */
     private val establishedConnections = ConcurrentHashMap<String, Instant>()
 
     fun getDiscoveredEndpoints(): Map<String, DiscoveredEndpointInfo> = discoveredEndpoints
-    fun getPendingConnections(): Set<String> = pendingConnections
+    fun getPendingConnections(): Set<String> = pendingConnections.keys
     fun getEstablishedConnections(): Map<String, Instant> = establishedConnections
 
     /** Handles populating the `discoveredEndpoints` map. */
@@ -86,7 +92,7 @@ class MeshConnection(
             if (discoveredEndpoints.remove(endpointId) == null) {
                 Timber.w("Tried to remove lost endpoint $endpointId from discoveredEndpoints, but it was not present.")
             }
-            if (!pendingConnections.remove(endpointId)) {
+            if (pendingConnections.remove(endpointId) == null) {
                 Timber.w("Tried to remove lost endpoint $endpointId from pendingConnections, but it was not present.")
             }
             if (establishedConnections.remove(endpointId) != null) {
@@ -98,28 +104,33 @@ class MeshConnection(
     /** Handles all connection lifecycle events, both incoming and outgoing. */
     private val connectionLifecycleCallback = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, connectionInfo: ConnectionInfo) {
-            Timber.i("onConnectionInitiated from ${connectionInfo.endpointName} ($endpointId)")
-            if (pendingConnections.add(endpointId)) {
-                acceptConnection(endpointId)
+            Timber.i("CONNECTION $endpointId 2: onConnectionInitiated from ${connectionInfo.endpointName}")
+            if (pendingConnections.put(endpointId, Clock.System.now()) == null) {
+                Timber.i("CONNECTION $endpointId 2: Accepting new connection (inbound or outbound) from ${connectionInfo.endpointName} ($endpointId)")
+                connectionsClient.acceptConnection(endpointId, payloadCallback)
             } else {
-                Timber.w("Duplicate onConnectionInitiated for $endpointId, ignoring.")
+                Timber.w("CONNECTION $endpointId 2: Duplicate onConnectionInitiated for $endpointId, ignoring.")
             }
         }
 
         override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
-            if (!pendingConnections.remove(endpointId)) {
-                Timber.w("onConnectionResult for $endpointId, but it was not in pendingConnections.")
+            Timber.i("CONNECTION $endpointId 3: onConnectionResult")
+            if (pendingConnections.remove(endpointId) == null) {
+                Timber.w("CONNECTION $endpointId 3: It was not in pendingConnections. Unclear how we got here.")
             }
             if (result.status.statusCode == ConnectionsStatusCodes.STATUS_OK) {
                 establishedConnections[endpointId] = Clock.System.now()
+                Timber.i("CONNECTION $endpointId 3: Connection established.")
+            } else {
+                Timber.w("CONNECTION $endpointId 3: Connection failed with status code ${result.status.statusCode}")
             }
-            listener.onConnectionResult(endpointId, result)
+            HealingMesh.onConnectionResult(endpointId, result)
         }
 
         override fun onDisconnected(endpointId: String) {
-            Timber.i("onDisconnected from $endpointId")
+            Timber.i("CONNECTION $endpointId 4: onDisconnected")
             if (establishedConnections.remove(endpointId) == null) {
-                Timber.w("onDisconnected from $endpointId, but it was not in establishedConnections.")
+                Timber.w("CONNECTION $endpointId 4: onDisconnected but it was not in establishedConnections, maybe someone else removed it?")
             }
         }
     }
@@ -127,7 +138,7 @@ class MeshConnection(
     /** Handles incoming data from connected peers and forwards it to the listener. */
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
-            listener.onPayloadReceived(endpointId, payload)
+            HealingMesh.onPayloadReceived(endpointId, payload)
         }
 
         override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {
@@ -143,9 +154,9 @@ class MeshConnection(
             connectionLifecycleCallback,
             AdvertisingOptions.Builder().setStrategy(STRATEGY).build()
         ).addOnSuccessListener {
-            Timber.i("Advertising started for service ${localHumanReadableName}.")
+            Timber.w("Advertising started for service ${localHumanReadableName}.")
         }.addOnFailureListener { e ->
-            Timber.i(e, "Advertising failed for service $localHumanReadableName.")
+            Timber.w(e, "Advertising failed for service $localHumanReadableName.")
         }
 
         connectionsClient.startDiscovery(
@@ -153,7 +164,7 @@ class MeshConnection(
             endpointDiscoveryCallback, // Use the new callback
             DiscoveryOptions.Builder().setStrategy(STRATEGY).build()
         ).addOnSuccessListener {
-            Timber.i("Discovery started.")
+            Timber.w("Discovery started.")
         }.addOnFailureListener { e ->
             Timber.e(e, "Discovery failed.")
         }
@@ -168,30 +179,27 @@ class MeshConnection(
         establishedConnections.clear()
     }
 
-    /** Internal method to accept an incoming connection request. */
-    private fun acceptConnection(endpointId: String) {
-        connectionsClient.acceptConnection(endpointId, payloadCallback)
-    }
-
-    /** Initiates a connection to a discovered endpoint. */
+    /** Manually initiates a connection to a discovered endpoint. */
     fun requestConnection(endpointId: String) {
-        if (pendingConnections.add(endpointId)) {
+        Timber.i("CONNECTION $endpointId 1: requestConnection")
+        if (pendingConnections.put(endpointId, Clock.System.now()) == null) {
+
             connectionsClient.requestConnection(
                 localHumanReadableName,
                 endpointId,
                 connectionLifecycleCallback
             ).addOnFailureListener {
-                Timber.w("Failed to request connection to $endpointId")
-                if (!pendingConnections.remove(endpointId)) {
-                    Timber.e("Failed to remove $endpointId from pendingConnections after a failed connection request.")
+                Timber.w("CONNECTION $endpointId 1: Failed to request connection")
+                if (pendingConnections.remove(endpointId) == null) {
+                    Timber.e("CONNECTION $endpointId 1: Failed to remove from pendingConnections after a failed connection request, maybe someone else removed it?")
                 }
             }
         } else {
-            Timber.w("Tried to connect to $endpointId, but it was already in pendingConnections.")
+            Timber.w("CONNECTION $endpointId 1: Tried to connect, but it was already in pendingConnections.")
         }
     }
 
-    /** Disconnects from a connected endpoint. */
+    /** Manually disconnects from a connected endpoint. */
     fun disconnectFromEndpoint(endpointId: String) {
         connectionsClient.disconnectFromEndpoint(endpointId)
     }
@@ -226,11 +234,5 @@ class MeshConnection(
         Timber.d("BROADCAST: $message")
         NetworkMessageRegistry.isFirstSeen(message)
         forwardMessage(message)
-    }
-
-
-    companion object {
-        private const val MESH_SERVICE_ID = "info.benjaminhill.localmesh2.MESH"
-        val STRATEGY: Strategy = Strategy.P2P_CLUSTER
     }
 }

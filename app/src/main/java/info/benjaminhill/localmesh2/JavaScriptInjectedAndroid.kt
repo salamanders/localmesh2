@@ -4,7 +4,7 @@ package info.benjaminhill.localmesh2
 
 import android.content.Context
 import android.webkit.JavascriptInterface
-import info.benjaminhill.localmesh2.p2p.NetworkHolder
+import info.benjaminhill.localmesh2.p2p.MeshConnection
 import info.benjaminhill.localmesh2.p2p.NetworkMessage
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
@@ -46,11 +46,10 @@ class JavaScriptInjectedAndroid(private val context: Context) {
         return Json.encodeToString(
             Status(
                 visualizations = visualizations,
-                id = NetworkHolder.localHumanReadableName,
-                discoveredPeerCount = NetworkHolder.connection?.getDiscoveredEndpointsCount() ?: 0,
-                pendingPeerCount = NetworkHolder.connection?.getPendingConnectionsCount() ?: 0,
-                connectedPeerCount = NetworkHolder.connection?.getEstablishedConnectionsCount()
-                    ?: 0,
+                id = MeshConnection.localHumanReadableName,
+                discoveredPeerCount = MeshConnection.getDiscoveredEndpoints().size,
+                pendingPeerCount = MeshConnection.getPendingConnections().size,
+                connectedPeerCount = MeshConnection.getEstablishedConnections().size,
             )
         )
     }
@@ -62,6 +61,6 @@ class JavaScriptInjectedAndroid(private val context: Context) {
             breadCrumbs = emptyList(),
             displayScreen = folder
         )
-        NetworkHolder.connection?.broadcast(message)
+        MeshConnection.broadcast(message)
     }
 }

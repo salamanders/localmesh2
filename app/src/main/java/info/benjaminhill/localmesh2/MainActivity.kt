@@ -19,7 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import info.benjaminhill.localmesh2.p2p.HealingMesh
-import info.benjaminhill.localmesh2.p2p.NetworkHolder
+import info.benjaminhill.localmesh2.p2p.MeshConnection
 import timber.log.Timber
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
         Timber.plant(Timber.DebugTree())
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        val dangerousPermissions = PermissionUtils.getDangerousPermissions(this)
+        val dangerousPermissions = getDangerousPermissions(this)
         val allPermissionsGranted = dangerousPermissions.all {
             ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
         }
@@ -87,16 +87,14 @@ class MainActivity : ComponentActivity() {
 
     private fun selectRole() {
         logPermissions()
-        Timber.i("Starting Healing Mesh")
-        val hm = HealingMesh(applicationContext)
-        NetworkHolder.connection = hm
-        hm.start()
-        display("display.html")
-    }
+        Timber.i("Init MeshConnection")
+        MeshConnection.init(applicationContext)
 
-    private fun display(webAppPath: String) {
+        Timber.i("Starting Healing Mesh")
+        HealingMesh.start()
+
         Intent(this, WebAppActivity::class.java).apply {
-            putExtra(WebAppActivity.EXTRA_PATH, webAppPath)
+            putExtra(WebAppActivity.EXTRA_PATH, "index.html")
         }.also {
             startActivity(it)
         }
@@ -105,6 +103,6 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         Timber.w("MainActivity.onDestroy() called.")
-        NetworkHolder.connection?.stop()
+        HealingMesh.stop()
     }
 }

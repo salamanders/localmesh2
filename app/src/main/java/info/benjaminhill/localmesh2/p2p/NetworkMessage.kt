@@ -27,11 +27,11 @@ data class NetworkMessage(
     // Optional command to change the display target.
     val displayScreen: String?,
 ) {
-    fun toByteArray(): ByteArray = Cbor.Default.encodeToByteArray(serializer(), this)
+    fun toByteArray(): ByteArray = Cbor.encodeToByteArray(serializer(), this)
 
     companion object {
         fun fromByteArray(byteArray: ByteArray): NetworkMessage =
-            Cbor.Default.decodeFromByteArray(serializer(), byteArray)
+            Cbor.decodeFromByteArray(serializer(), byteArray)
 
         // Custom serializer for Instant
         @OptIn(ExperimentalTime::class)
